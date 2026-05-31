@@ -1,0 +1,44 @@
+<div id="score-viewer-overlay" class="score-viewer-overlay hidden" aria-hidden="true"
+     data-pdf-worker="{{ url_for('static', filename='vendor/pdfjs/pdf.worker.min.js') }}">
+  <div class="viewer-page" id="score-viewer-panel">
+    <div class="viewer-header-bar">
+      <button type="button" class="btn-icon btn-icon-sm viewer-header-btn" id="score-viewer-close" title="Close" aria-label="Close viewer">
+        {% include "partials/icon_close.svg.html" %}
+      </button>
+      <div class="viewer-score-nav hidden" id="score-viewer-nav" role="group" aria-label="Scores in library">
+        <button type="button" class="btn btn-sm viewer-score-nav-btn" id="score-viewer-prev" aria-label="Previous score">‹</button>
+        <span class="viewer-score-nav-pos" id="score-viewer-pos"></span>
+        <button type="button" class="btn btn-sm viewer-score-nav-btn" id="score-viewer-next" aria-label="Next score">›</button>
+      </div>
+      <span class="viewer-title" id="score-viewer-title"></span>
+      <span class="viewer-pdf-page-nav hidden" id="score-viewer-pdf-page" aria-live="polite"></span>
+      <button type="button" class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-pdf-scroll-mode" aria-label="Switch scroll mode" title="Scroll mode">
+        <span class="viewer-icon-pdf-scroll-vertical hidden">{% include "partials/icon_pdf_scroll_vertical.svg.html" %}</span>
+        <span class="viewer-icon-pdf-scroll-vertical-pages hidden">{% include "partials/icon_pdf_scroll_vertical_pages.svg.html" %}</span>
+        <span class="viewer-icon-pdf-scroll-horizontal hidden">{% include "partials/icon_pdf_scroll_horizontal.svg.html" %}</span>
+      </button>
+      <a class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-download" title="Download" aria-label="Download">
+        {% include "partials/icon_download.svg.html" %}
+      </a>
+      <button type="button" class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-print" title="Print" aria-label="Print">
+        {% include "partials/icon_print.svg.html" %}
+      </button>
+      <button type="button" class="btn-icon btn-icon-sm viewer-header-btn" id="score-viewer-fullscreen" aria-label="Enter fullscreen">
+        <svg class="viewer-icon-fullscreen-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9"/>
+          <path d="M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15"/>
+          <path d="M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9"/>
+          <path d="M20.25 20.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/>
+        </svg>
+        <svg class="viewer-icon-fullscreen-exit hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75"/>
+          <path d="M9 15v4.5M9 15H4.5M9 15l-5.25 5.25"/>
+          <path d="M15 9h4.5M15 9V4.5M15 9l5.25-5.25"/>
+          <path d="M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"/>
+        </svg>
+      </button>
+    </div>
+    <div class="viewer-toolbar hidden" id="score-viewer-toolbar"></div>
+    <div class="viewer-content" id="score-viewer-content"></div>
+  </div>
+</div>

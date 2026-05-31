@@ -1,0 +1,13 @@
+<div class="desktop-panel{% if library_panel.panel_class %} {{ library_panel.panel_class }}{% endif %}{% if library_panel.assign_user %} maestro-assign-panel{% endif %}"
+     {% if library_panel.assign_user %}data-maestro-assign-user="{{ library_panel.assign_user }}"{% endif %}>
+  <div class="desktop-panel-header">
+    <span>{{ library_panel.panel_title }}</span>
+    {% if library_panel.show_header_actions %}
+      {% include "partials/folder_actions.html" %}
+    {% endif %}
+  </div>
+  {% if library_panel.panel_hint %}
+  <p class="panel-hint">{{ library_panel.panel_hint }}</p>
+  {% endif %}
+  {% include "partials/library_workspace.html" %}
+</div>

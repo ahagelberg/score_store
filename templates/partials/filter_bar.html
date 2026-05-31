@@ -1,0 +1,13 @@
+<div class="filter-modern" data-filter-root
+     data-page-base="{{ url_for(library_panel.nav_endpoint) }}"
+     data-nav-endpoint="{{ library_panel.nav_endpoint }}"
+     data-preserve-params="{{ library_panel.preserve|tojson }}"
+     data-active-tag="{{ library_panel.active_tag }}">
+  <span class="filter-search-icon" aria-hidden="true">⌕</span>
+  <input class="filter-search-input" type="search" data-filter-input
+         value="{{ library_panel.query }}"
+         placeholder="Filter scores…"
+         autocomplete="off"
+         spellcheck="false">
+  <button type="button" class="filter-clear{% if not library_panel.query %} hidden{% endif %}" data-filter-clear title="Clear filter" aria-label="Clear filter">×</button>
+</div>

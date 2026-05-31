@@ -1,0 +1,12 @@
+<nav class="folder-tree-pane" aria-label="Folders">
+  <ul class="folder-tree">
+    {% for folder in library_panel.lib.folders if folder.id == 'root' %}
+      {% include "partials/folder_tree_item.html" %}
+    {% endfor %}
+    {% for folder in library_panel.lib.folders if folder.id != 'root' %}
+      {% with is_child=true %}
+        {% include "partials/folder_tree_item.html" %}
+      {% endwith %}
+    {% endfor %}
+  </ul>
+</nav>

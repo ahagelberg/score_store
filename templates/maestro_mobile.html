@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Share — {{ app_title }}{% endblock %}
+{% block body %}
+<header class="site-header">
+  <h1>Share scores</h1>
+  <nav>
+    <a href="{{ url_for('maestro') }}">Desktop</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </nav>
+</header>
+<p class="maestro-mobile-note">Use desktop for full library management.</p>
+<div class="library-page library-page-mobile" id="mobile-share-root">
+  <div class="desktop-panel">
+    <div class="desktop-panel-header"><span>{{ library_panel.panel_title }}</span></div>
+    <div class="library-workspace library-workspace-single"
+         data-score-ids='{{ library_panel.score_ids|tojson }}'
+         data-view-nav='{{ library_panel.view_nav|tojson }}'>
+      <div class="workspace-toolbar">
+        {% include "partials/filter_bar.html" %}
+        {% if library_panel.all_tags %}
+        <div class="workspace-toolbar-tags">
+          <div class="tag-filter-list" data-tag-filter-list>
+            {% for t in library_panel.all_tags %}
+              <button type="button"
+                      class="tag-filter-chip{% if library_panel.active_tag == t %} active{% endif %}"
+                      data-tag-filter
+                      data-tag="{{ t }}">{{ t }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="files-pane">
+        <div class="files-pane-header">
+          <div class="files-pane-header-start">
+            <span class="files-pane-title">{{ library_panel.scores_title }}</span>
+            <span class="files-pane-count" data-filter-count></span>
+          </div>
+        </div>
+        <div class="workspace-scores">
+          <ul class="score-list" id="mobile-score-list">
+            {% for score in scores %}
+            {% set filter_text = [score.title, score.composer, score.arranger, score.description, score.tags|default([])|join(' ')] | select | join(' ') %}
+            <li class="score-accordion score-accordion-collapsed" data-score-id="{{ score.id }}"
+                data-filter-text="{{ filter_text }}"
+                data-filter-tags="{{ score.tags|default([])|join(',') }}">
+              <div class="score-summary">
+                <span class="score-summary-title">{{ score.title }}</span>
+                <button type="button" class="btn btn-sm score-view-btn" data-score-id="{{ score.id }}">View</button>
+                <button type="button" class="btn btn-sm mobile-share-btn" data-score-id="{{ score.id }}">Share</button>
+              </div>
+              <div class="share-panel hidden" data-share-panel="{{ score.id }}">
+                {% for u in users %}
+                <label class="share-user-row">
+                  <input type="checkbox" class="assign-checkbox" data-user-id="{{ u.id }}" data-score-id="{{ score.id }}"
+                    {% if u.id in score.assigned_user_ids %}checked{% endif %}>
+                  {{ u.display_name }}
+                </label>
+                {% endfor %}
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="filter-empty hidden" data-filter-empty>No scores match your filter.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% include "partials/score_viewer_overlay.html" %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/pdfjs/pdf.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+<script src="{{ url_for('static', filename='js/print.js') }}"></script>
+<script src="{{ url_for('static', filename='js/viewer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/filter.js') }}"></script>
+<script src="{{ url_for('static', filename='js/maestro.js') }}"></script>
+{% endblock %}

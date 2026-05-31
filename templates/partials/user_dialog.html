@@ -1,0 +1,33 @@
+<div class="dialog-overlay hidden" id="user-dialog-overlay" data-dialog="user">
+  <div class="dialog" role="dialog" aria-labelledby="user-dialog-title">
+    <h2 id="user-dialog-title">Add user</h2>
+    <form id="user-dialog-form" method="post">
+      <input type="hidden" name="user_id" id="user-dialog-user-id" value="">
+      <div class="form-group">
+        <label for="user-display-name">Display name</label>
+        <input class="form-control" type="text" id="user-display-name" name="display_name" required>
+      </div>
+      <div class="form-group">
+        <label for="user-username">Username</label>
+        <input class="form-control" type="text" id="user-username" name="username" required autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="user-password">Password</label>
+        <input class="form-control" type="password" id="user-password" name="password" autocomplete="new-password">
+        <small class="score-summary-meta" id="user-password-hint">Required for new users</small>
+      </div>
+      <div class="form-group">
+        <label for="user-role">Role</label>
+        <select class="form-control" id="user-role" name="role">
+          <option value="singer">Singer</option>
+          <option value="choir">Choir</option>
+          <option value="maestro">Maestro</option>
+        </select>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-dialog-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>

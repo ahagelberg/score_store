@@ -1,0 +1,134 @@
+<li class="score-accordion drop-target{% if expanded|default(false) %} score-accordion-expanded{% else %} score-accordion-collapsed{% endif %}"
+    data-drop-kind="score"
+    data-score-id="{{ score.id|default('') }}"
+    data-score-folder-id="{{ score_folder_id|default('root') }}"
+    data-filter-text="{{ filter_text|default('') }}"
+    data-filter-tags="{{ score.tags|default([])|join(',') }}"
+    data-mode="{{ mode|default('edit') }}"
+    data-library-ctx="{{ library_panel.library_ctx }}"
+    data-folder-id="{{ library_panel.folder_id }}"
+    data-can-edit="{{ 'true' if can_edit|default(false) else 'false' }}"
+    {% if library_panel.draggable_score %}draggable="true" data-drag-score="true"{% endif %}>
+  <div class="score-summary" data-score-summary>
+    <div class="score-summary-main">
+      <span class="score-summary-title">{{ score.title|default('New score') }}</span>
+      {% if score.composer %}<span class="score-summary-composer">{{ score.composer }}</span>{% endif %}
+      {% if not score_main %}<span class="score-badge-warn">No main PDF</span>{% endif %}
+    </div>
+    <div class="score-summary-end">
+      <div class="score-summary-tags">
+        {% for t in score.tags|default([]) %}
+          <span class="tag-chip">{{ t }}</span>
+        {% endfor %}
+      </div>
+      {% if (score.id and score_main) or can_edit|default(false) or can_delete|default(false) %}
+      <div class="score-summary-actions">
+        {% if score.id and score_main %}
+        <button type="button" class="btn-icon btn-icon-sm score-view-btn"
+                data-score-id="{{ score.id }}"
+                title="View"
+                aria-label="View">👁</button>
+        <a class="btn-icon btn-icon-sm viewer-header-btn score-download-btn"
+           href="{{ score_download_url(score.id) }}"
+           title="Download"
+           aria-label="Download">{% include "partials/icon_download.svg.html" %}</a>
+        <button type="button" class="btn-icon btn-icon-sm score-print-btn"
+                data-print-url="{{ url_for('serve_file', score_id=score.id, stored_name=score_main.stored_name) }}"
+                data-print-media="pdf"
+                title="Print"
+                aria-label="Print">{% include "partials/icon_print.svg.html" %}</button>
+        {% endif %}
+        {% if can_edit|default(false) %}
+        <button type="button" class="btn-icon btn-icon-sm score-edit-btn" data-action="expand" title="Edit" aria-label="Edit">✎</button>
+        {% endif %}
+        {% if can_delete|default(false) %}
+        <button type="button" class="btn-icon btn-icon-sm btn-icon-danger score-delete-btn" data-score-id="{{ score.id }}" title="Delete" aria-label="Delete">×</button>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="score-editor{% if not expanded|default(false) %} hidden{% endif %}" data-score-editor>
+    {% set main_file = score_main %}
+    <div class="score-panel-main"{% if main_file %} draggable="true" data-file-id="{{ main_file.id }}" data-drag-kind="main"{% endif %}>
+      <span class="score-panel-main-icon">📄</span>
+      <div class="score-panel-main-info">
+        {% if can_edit|default(false) and main_file %}
+        <input class="form-control score-panel-main-name" type="text" data-main-name-input data-file-id="{{ main_file.id }}" value="{{ main_file.name }}">
+        {% else %}
+        <div class="score-panel-main-name">{{ main_file.name if main_file else 'No main file' }}</div>
+        {% endif %}
+        <div class="score-panel-main-sub">{% if main_file %}{{ main_file.stored_name }}{% elif staged_filename %}{{ staged_filename }}{% endif %}</div>
+      </div>
+    </div>
+    <div class="score-section" data-section="details">
+      <div class="score-section-header" data-section-toggle>
+        <span>Details</span>
+        <span data-section-icon>−</span>
+      </div>
+      <div class="score-section-body">
+        <div class="form-group">
+          <label>Title *</label>
+          <input class="form-control" type="text" name="title" data-field="title" value="{{ score.title|default('') }}" required>
+        </div>
+        <div class="form-group">
+          <label>Composer</label>
+          <input class="form-control" type="text" name="composer" data-field="composer" value="{{ score.composer|default('') }}">
+        </div>
+        <div class="form-group">
+          <label>Arranger</label>
+          <input class="form-control" type="text" name="arranger" data-field="arranger" value="{{ score.arranger|default('') }}">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea class="form-control" name="description" data-field="description">{{ score.description|default('') }}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Tags</label>
+          {% set tags_json = score.tags|default([])|tojson %}
+          {% include "partials/tag_input.html" %}
+        </div>
+      </div>
+    </div>
+    <div class="score-section" data-section="aux">
+      <div class="score-section-header" data-section-toggle>
+        <span>Additional files</span>
+        <span data-section-icon>−</span>
+      </div>
+      <div class="score-section-body">
+        {% if can_edit|default(false) %}
+        <button type="button" class="btn btn-sm add-youtube-btn">+ YouTube</button>
+        {% endif %}
+        <div class="aux-files">
+          <ul class="aux-file-list" data-aux-list>
+            {% for f in aux_files|default([]) %}
+            <li class="aux-file-item" draggable="true" data-file-id="{{ f.id }}" data-drag-kind="aux">
+              <span class="aux-file-icon" aria-hidden="true">📄</span>
+              <span class="aux-file-type">{{ aux_file_type_label(f) }}</span>
+              <span class="aux-file-name">{{ f.name }}</span>
+              {% if can_edit|default(false) %}
+              <button type="button" class="aux-file-remove" data-remove-file="{{ f.id }}" title="Remove">×</button>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% if can_edit|default(false) %}
+          <div class="aux-drop-zone drop-target aux-drop-zone-active"
+               data-drop-kind="aux"
+               data-score-id="{{ score.id|default('') }}">
+            <p class="aux-drop-hint">Drop files here to add</p>
+          </div>
+          {% elif not aux_files|default([]) %}
+          <p class="aux-files-empty">No additional files</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% if can_edit|default(false) %}
+    <div class="score-editor-actions">
+      <button type="button" class="btn score-cancel-btn">Cancel</button>
+      <button type="button" class="btn btn-primary score-save-btn">Save</button>
+    </div>
+    {% endif %}
+  </div>
+</li>

@@ -1,0 +1,39 @@
+<div class="library-workspace" data-library-view="list"
+     data-library-ctx="{{ library_panel.library_ctx }}"
+     data-score-ids='{{ library_panel.score_ids|tojson }}'
+     data-view-nav='{{ library_panel.view_nav|tojson }}'>
+  <div class="workspace-toolbar">
+    {% include "partials/filter_bar.html" %}
+    {% if library_panel.all_tags %}
+    <div class="workspace-toolbar-tags">
+      <div class="tag-filter-list" data-tag-filter-list>
+        {% for t in library_panel.all_tags %}
+          <button type="button"
+                  class="tag-filter-chip{% if library_panel.active_tag == t %} active{% endif %}"
+                  data-tag-filter
+                  data-tag="{{ t }}">{{ t }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  <div class="workspace-body">
+    {% include "partials/folder_tree.html" %}
+    <div class="files-pane drop-target"
+         data-drop-kind="library"
+         data-library-ctx="{{ library_panel.library_ctx }}"
+         data-folder-id="{{ library_panel.folder_id }}">
+      <div class="files-pane-header">
+        <div class="files-pane-header-start">
+          <span class="files-pane-title" data-default-title="{{ library_panel.scores_title }}">{{ library_panel.scores_title }}</span>
+          <span class="files-pane-count" data-filter-count></span>
+        </div>
+        {% include "partials/scores_pane_actions.html" %}
+      </div>
+      <div class="workspace-scores">
+        {% include "partials/library_list.html" %}
+        <p class="filter-empty hidden" data-filter-empty>No scores match your filter.</p>
+      </div>
+    </div>
+  </div>
+</div>

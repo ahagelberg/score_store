@@ -1,0 +1,6 @@
+<div class="folder-actions">
+  {% if library_panel.can_upload %}
+  <button type="button" class="btn btn-sm btn-primary upload-pdf-btn" data-library-ctx="{{ library_panel.library_ctx }}" data-folder-id="{{ library_panel.folder_id }}">{{ library_panel.upload_label }}</button>
+  <input type="file" class="hidden upload-pdf-input" accept=".pdf,application/pdf">
+  {% endif %}
+</div>
