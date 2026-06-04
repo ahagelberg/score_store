@@ -55,6 +55,54 @@
   let pdfRelayoutScheduled = false;
   let context = { scoreIds: [], navQuery: {} };
 
+  function scoreViewPage() {
+    return document.getElementById("score-view-page");
+  }
+
+  function isStandaloneViewPage() {
+    return !!scoreViewPage();
+  }
+
+  function viewPageNavQuery() {
+    const page = scoreViewPage();
+    if (!page) return {};
+    return parseJsonAttr(page, "viewNav", {});
+  }
+
+  function viewPageScoreIds() {
+    const page = scoreViewPage();
+    if (!page) return [];
+    return parseJsonAttr(page, "scoreIds", []);
+  }
+
+  function updateViewPageUrl(scoreId) {
+    const page = scoreViewPage();
+    if (!page) return;
+    const params = new URLSearchParams();
+    Object.entries(context.navQuery).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    const qs = params.toString();
+    const url = qs
+      ? `/scores/${encodeURIComponent(scoreId)}/view?${qs}`
+      : `/scores/${encodeURIComponent(scoreId)}/view`;
+    window.history.replaceState(null, "", url);
+    page.dataset.scoreId = scoreId;
+  }
+
+  function redirectLegacyViewScoreParam() {
+    const params = new URLSearchParams(window.location.search);
+    const viewScore = params.get("view_score");
+    if (!viewScore || isStandaloneViewPage()) return false;
+    params.delete("view_score");
+    const qs = params.toString();
+    const url = qs
+      ? `/scores/${encodeURIComponent(viewScore)}/view?${qs}`
+      : `/scores/${encodeURIComponent(viewScore)}/view`;
+    window.location.replace(url);
+    return true;
+  }
+
   function workspaceFrom(el) {
     return el.closest(".library-workspace");
   }
@@ -726,28 +774,24 @@
     overlay.classList.remove("hidden");
     overlay.setAttribute("aria-hidden", "false");
     document.body.classList.add("score-viewer-open");
+    if (isStandaloneViewPage()) updateViewPageUrl(scoreId);
   }
 
   function close() {
     exitFullscreenIfNeeded();
     hidePdfPageNav();
     setPdfScrollModeBtnVisible(false);
+    const page = scoreViewPage();
+    if (page?.dataset.backUrl) {
+      window.location.href = page.dataset.backUrl;
+      return;
+    }
     overlay.classList.add("hidden");
     overlay.setAttribute("aria-hidden", "true");
     document.body.classList.remove("score-viewer-open");
     content.replaceChildren();
     toolbar.replaceChildren();
     clearPdfCache();
-    stripViewScoreParam();
-  }
-
-  function stripViewScoreParam() {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has("view_score")) return;
-    params.delete("view_score");
-    const qs = params.toString();
-    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-    window.history.replaceState(null, "", url);
   }
 
   function openFromButton(btn) {
@@ -784,6 +828,7 @@
   }
 
   function bindOverlay() {
+    if (redirectLegacyViewScoreParam()) return;
     overlay = document.getElementById("score-viewer-overlay");
     if (!overlay) return;
     pdfWorkerUrl = overlay.dataset.pdfWorker || "";
@@ -849,15 +894,15 @@
     document.addEventListener("click", (e) => {
       const btn = e.target.closest(".score-view-btn");
       if (!btn) return;
+      if (isStandaloneViewPage()) return;
       e.preventDefault();
       e.stopPropagation();
       openFromButton(btn);
     });
-    const params = new URLSearchParams(window.location.search);
-    const viewScore = params.get("view_score");
-    if (viewScore) {
-      const workspace = document.querySelector(".library-workspace");
-      open(viewScore, parseJsonAttr(workspace, "scoreIds", []), parseJsonAttr(workspace, "viewNav", {}));
+    const page = scoreViewPage();
+    if (page) {
+      const scoreId = page.dataset.scoreId;
+      if (scoreId) open(scoreId, viewPageScoreIds(), viewPageNavQuery());
     }
   }
 

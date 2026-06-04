@@ -20,18 +20,19 @@
   }
 
   async function assignScoreToUser(scoreId, userId, folderId) {
-    const res = await fetch("/maestro/assign", {
+    const res = await Csrf.fetch("/maestro/assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ score_id: scoreId, user_id: userId, assign: true }),
     });
+    const data = await res.json();
     if (!res.ok) {
-      const data = await res.json();
       showToast(data.error || "Assign failed", true);
-      return false;
+      return null;
     }
+    let effectiveFolder = "root";
     if (folderId && folderId !== "root") {
-      const folderRes = await fetch(
+      const folderRes = await Csrf.fetch(
         `/library/${USER_LIBRARY_CTX_PREFIX}${userId}/scores/${scoreId}/folder`,
         {
           method: "POST",
@@ -40,11 +41,40 @@
         },
       );
       if (!folderRes.ok) {
-        showToast("Assigned but folder move failed", true);
-        return false;
+        const folderData = await folderRes.json();
+        showToast(folderData.error || "Assigned but folder move failed", true);
+        return null;
       }
+      effectiveFolder = folderId;
     }
-    return true;
+    return { score: data.score, folderId: effectiveFolder };
+  }
+
+  function userLibraryWorkspace(userId) {
+    return document.querySelector(`.library-workspace[data-library-ctx="${USER_LIBRARY_CTX_PREFIX}${userId}"]`);
+  }
+
+  function insertAssignedScore(userId, folderId, score, target) {
+    if (!score?.id) return;
+    const libraryCtx = `${USER_LIBRARY_CTX_PREFIX}${userId}`;
+    const workspace = userLibraryWorkspace(userId) || workspaceFrom(target);
+    const list = workspace?.querySelector(".score-list");
+    if (!list) return;
+    const existing = list.querySelector(`.score-accordion[data-score-id="${CSS.escape(score.id)}"]`);
+    if (existing) {
+      existing.dataset.scoreFolderId = folderId;
+      existing.dataset.folderId = folderId;
+    } else {
+      ScoreEditor.insertScoreAccordion(list, score, libraryCtx, folderId, {
+        expanded: false,
+        draggable: true,
+        hardDelete: false,
+        expandMode: "keep",
+      });
+    }
+    if (workspace && window.LibraryLayout?.refreshWorkspace) {
+      window.LibraryLayout.refreshWorkspace(workspace);
+    }
   }
 
   function parseDragData(e) {
@@ -131,16 +161,16 @@
     const scoreDragId = transfer?.getData(SCORE_DRAG_MIME);
     const assignUserId = userIdFromLibraryCtx(libraryCtx);
     if (scoreDragId && assignUserId && (kind === "library" || kind === "folder")) {
-      const ok = await assignScoreToUser(scoreDragId, assignUserId, kind === "folder" ? folderId : "root");
-      if (ok) {
+      const result = await assignScoreToUser(scoreDragId, assignUserId, kind === "folder" ? folderId : "root");
+      if (result) {
+        insertAssignedScore(assignUserId, result.folderId, result.score, target);
         showToast("Score assigned");
-        location.reload();
       }
       return;
     }
 
     if (scoreDragId && kind === "folder" && libraryCtx) {
-      const res = await fetch(`/library/${libraryCtx}/scores/${scoreDragId}/folder`, {
+      const res = await Csrf.fetch(`/library/${libraryCtx}/scores/${scoreDragId}/folder`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ folder_id: folderId }),
@@ -168,7 +198,7 @@
     if (dragPayload && dragPayload.scoreId && kind === "aux") {
       const toScore = target.dataset.scoreId || target.closest("[data-score-id]")?.dataset.scoreId;
       if (!toScore || toScore === dragPayload.scoreId) return;
-      const res = await fetch(`/scores/${dragPayload.scoreId}/files/${dragPayload.fileId}/move`, {
+      const res = await Csrf.fetch(`/scores/${dragPayload.scoreId}/files/${dragPayload.fileId}/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ to_score_id: toScore }),
@@ -266,7 +296,7 @@
         const ctx = btn.dataset.libraryCtx;
         const fd = new FormData();
         fd.append("name", name);
-        const res = await fetch(`/library/${ctx}/folders/new`, {
+        const res = await Csrf.fetch(`/library/${ctx}/folders/new`, {
           method: "POST",
           body: fd,
           headers: { "X-Requested-With": "XMLHttpRequest" },
@@ -278,7 +308,7 @@
     root.querySelectorAll(".delete-folder-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
         if (!window.confirm("Delete this folder? Scores move to root.")) return;
-        const res = await fetch(`/library/${btn.dataset.libraryCtx}/folders/${btn.dataset.folderId}/delete`, { method: "POST" });
+        const res = await Csrf.fetch(`/library/${btn.dataset.libraryCtx}/folders/${btn.dataset.folderId}/delete`, { method: "POST" });
         if (res.ok) location.reload();
       });
     });
@@ -311,10 +341,10 @@
         const scoreId = e.dataTransfer.getData(SCORE_DRAG_MIME);
         const userId = assignPanel.dataset.maestroAssignUser;
         if (!scoreId || !userId) return;
-        const ok = await assignScoreToUser(scoreId, userId, "root");
-        if (ok) {
+        const result = await assignScoreToUser(scoreId, userId, "root");
+        if (result) {
+          insertAssignedScore(userId, result.folderId, result.score, assignPanel);
           showToast("Score assigned");
-          location.reload();
         }
       });
     }

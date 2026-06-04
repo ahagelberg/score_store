@@ -23,8 +23,10 @@ For automated/Docker deploy you can skip the wizard with environment variables (
 | Role | Access |
 |------|--------|
 | **Maestro** | Desktop 3-column workspace, global library, user management, assign scores |
-| **Singer** | Mobile-first library, upload own scores, concert viewer |
-| **Choir** | Shared account; library layout overrides in browser localStorage |
+| **Singer** | Mobile-first library, upload own scores, manage folders in own library, concert viewer |
+| **Choir** | Shared account; library layout overrides in browser localStorage only (server permissions in `policy.py`) |
+
+Server authorization rules live in `policy.py`. Routes should call those helpers rather than checking roles inline.
 
 ## Environment
 
@@ -73,11 +75,13 @@ docker run -p 5000:5000 -v scorestore-data:/app/data \
 
 ```
 data/
-  users.json
-  libraries/_global.json
-  libraries/{user_id}.json
-  scores/{score_id}/meta.json
-  scores/{score_id}/files/{uuid}.ext
+  users.json                         # id, display_name, username, password, role
+  libraries/_global.json             # library_id, display_name, folders, score_order, score_folders
+  libraries/u-{slug}.json            # library_id, owner_id, display_name, …
+  scores/s-{slug}/meta.json
+  scores/s-{slug}/files/{slug}.ext   # readable on-disk names (YouTube aux entries have no file)
 ```
+
+Entity IDs are readable slugs (whitespace → hyphens): user libraries use `u-{username}`, scores use `s-{title}`. Hash-style legacy IDs are rewritten on startup.
 
 Mount `data/` as a volume in production.

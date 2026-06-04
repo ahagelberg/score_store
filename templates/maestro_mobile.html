@@ -4,6 +4,7 @@
   <h1>Share scores</h1>
   <nav>
     <a href="{{ url_for('maestro') }}">Desktop</a>
+    <button type="button" class="header-link" id="maestro-password-btn">Password</button>
     <a href="{{ url_for('logout') }}">Logout</a>
   </nav>
 </header>
@@ -45,7 +46,7 @@
                 data-filter-tags="{{ score.tags|default([])|join(',') }}">
               <div class="score-summary">
                 <span class="score-summary-title">{{ score.title }}</span>
-                <button type="button" class="btn btn-sm score-view-btn" data-score-id="{{ score.id }}">View</button>
+                <a class="btn btn-sm score-view-btn" href="{{ score_view_url(score.id, library_panel) }}" data-score-id="{{ score.id }}">View</a>
                 <button type="button" class="btn btn-sm mobile-share-btn" data-score-id="{{ score.id }}">Share</button>
               </div>
               <div class="share-panel hidden" data-share-panel="{{ score.id }}">
@@ -66,6 +67,7 @@
     </div>
   </div>
 </div>
+{% include "partials/maestro_password_dialog.html" %}
 {% include "partials/score_viewer_overlay.html" %}
 {% endblock %}
 {% block scripts %}

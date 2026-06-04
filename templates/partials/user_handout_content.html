@@ -1,0 +1,39 @@
+<div class="user-handout">
+  <h2 class="user-handout-title">{{ app_title }}</h2>
+  <p class="user-handout-heading">Your account</p>
+  <dl class="user-handout-details">
+    <div class="user-handout-row">
+      <dt>Name</dt>
+      <dd>{{ display_name }}</dd>
+    </div>
+    <div class="user-handout-row">
+      <dt>Username</dt>
+      <dd>{{ username }}</dd>
+    </div>
+    {% if password_available %}
+    <div class="user-handout-row">
+      <dt>Password</dt>
+      <dd class="user-handout-password">{{ password }}</dd>
+    </div>
+    {% endif %}
+    <div class="user-handout-row">
+      <dt>Account type</dt>
+      <dd>{{ role_label }}</dd>
+    </div>
+    <div class="user-handout-row">
+      <dt>Address</dt>
+      <dd><a class="user-handout-url" href="{{ site_url }}">{{ site_url }}</a></dd>
+    </div>
+  </dl>
+  {% if not password_available %}
+  <p class="user-handout-note">Password not on file. Ask your maestro for your login password.</p>
+  {% endif %}
+  <section class="user-handout-steps">
+    <h3 class="user-handout-steps-title">How to sign in</h3>
+    <ol class="user-handout-steps-list">
+      <li>Open <a href="{{ site_url }}">{{ site_url }}</a> in your web browser.</li>
+      <li>Enter username <strong>{{ username }}</strong> and your password.</li>
+      <li>Open your assigned scores from your library.</li>
+    </ol>
+  </section>
+</div>

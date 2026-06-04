@@ -257,6 +257,7 @@
     const opts = options || {};
     const expanded = opts.expanded !== false;
     const draggable = opts.draggable === true;
+    const hardDelete = opts.hardDelete !== false;
     const mainFile = mainFileFromScore(score);
     const auxFiles = auxFilesFromScore(score);
     const tagsJson = JSON.stringify(score.tags || []);
@@ -268,7 +269,7 @@
     const noMainBadge = mainFile ? "" : `<span class="score-badge-warn">No main PDF</span>`;
     const tagChips = (score.tags || []).map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("");
     const summaryActionsHtml = mainFile
-      ? `<button type="button" class="btn-icon btn-icon-sm score-view-btn" data-score-id="${escapeHtml(score.id)}" title="View" aria-label="View">👁</button>
+      ? `<a class="btn-icon btn-icon-sm score-view-btn" href="/scores/${encodeURIComponent(score.id)}/view?lib=${encodeURIComponent(libraryCtx)}" data-score-id="${escapeHtml(score.id)}" title="View" aria-label="View">👁</a>
          <a class="btn-icon btn-icon-sm viewer-header-btn score-download-btn" href="/scores/${escapeHtml(score.id)}/download" title="Download" aria-label="Download">${ICON_DOWNLOAD}</a>
          <button type="button" class="btn-icon btn-icon-sm score-print-btn" data-print-url="/files/${escapeHtml(score.id)}/${escapeHtml(mainFile.stored_name)}" data-print-media="pdf" title="Print" aria-label="Print">${ICON_PRINT}</button>`
       : "";
@@ -283,10 +284,12 @@
     li.dataset.libraryCtx = libraryCtx;
     li.dataset.folderId = folderId;
     li.dataset.canEdit = "true";
+    li.dataset.hardDelete = hardDelete ? "true" : "false";
     if (draggable) {
       li.dataset.dragScore = "true";
     }
     const summaryDragAttr = draggable ? ' draggable="true"' : "";
+    const deleteLabel = hardDelete ? "Delete" : "Remove";
     li.innerHTML = `
       <div class="score-summary score-summary-clickable" data-score-summary${summaryDragAttr}>
         <div class="score-summary-main">
@@ -302,7 +305,7 @@
           <div class="score-summary-actions">
             ${summaryActionsHtml}
             <button type="button" class="btn-icon btn-icon-sm score-edit-btn" data-action="expand" title="Edit" aria-label="Edit">✎</button>
-            <button type="button" class="btn-icon btn-icon-sm btn-icon-danger score-delete-btn" data-score-id="${escapeHtml(score.id)}" title="Delete" aria-label="Delete">×</button>
+            <button type="button" class="btn-icon btn-icon-sm btn-icon-danger score-delete-btn" data-score-id="${escapeHtml(score.id)}" title="${deleteLabel}" aria-label="${deleteLabel}">×</button>
           </div>
         </div>
       </div>
@@ -350,14 +353,14 @@
     fd.append("arranger", "");
     fd.append("description", "");
     fd.append("tags", "[]");
-    const res = await fetch(`/library/${libraryCtx}/scores/new`, { method: "POST", body: fd });
+    const res = await Csrf.fetch(`/library/${libraryCtx}/scores/new`, { method: "POST", body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Upload failed");
     return data.score;
   }
 
   async function splitToNewScore(srcScoreId, fileId, libraryCtx, folderId, title) {
-    const res = await fetch(`/scores/${srcScoreId}/files/${fileId}/split`, {
+    const res = await Csrf.fetch(`/scores/${srcScoreId}/files/${fileId}/split`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -379,8 +382,9 @@
     const expanded = item.classList.contains("score-accordion-expanded");
     const accordionMode = item.dataset.accordionMode || null;
     const draggable = item.dataset.dragScore === "true";
+    const hardDelete = item.dataset.hardDelete !== "false";
     const parent = item.parentNode;
-    const newItem = buildScoreAccordion(score, libraryCtx, folderId, { expanded, draggable });
+    const newItem = buildScoreAccordion(score, libraryCtx, folderId, { expanded, draggable, hardDelete });
     if (accordionMode) setAccordionMode(newItem, accordionMode);
     parent.replaceChild(newItem, item);
     bindAccordion(newItem);
@@ -392,13 +396,20 @@
   function insertScoreAccordion(list, score, libraryCtx, folderId, options) {
     const opts = options || {};
     const draggable = opts.draggable ?? list.querySelector(".score-accordion[data-drag-score]") !== null;
-    const item = buildScoreAccordion(score, libraryCtx, folderId, { expanded: true, draggable });
+    const expanded = opts.expanded !== undefined ? opts.expanded : true;
+    const item = buildScoreAccordion(score, libraryCtx, folderId, {
+      expanded,
+      draggable,
+      hardDelete: opts.hardDelete,
+    });
     list.insertBefore(item, list.firstChild);
     bindAccordion(item);
     if (window.TagInput) window.TagInput.initAll(item);
     window.LibraryDrop?.bindDropTargets?.(item);
-    if (opts.expandMode === "keep") expandEditAccordionKeepOthers(item);
-    else expandEditAccordion(item);
+    if (expanded) {
+      if (opts.expandMode === "keep") expandEditAccordionKeepOthers(item);
+      else expandEditAccordion(item);
+    }
     window.ScoreFilter?.reapplyAll?.();
     return item;
   }
@@ -410,7 +421,7 @@
       showToast("Score not found", true);
       return;
     }
-    const res = await fetch(`/scores/${scoreId}/edit`, {
+    const res = await Csrf.fetch(`/scores/${scoreId}/edit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(meta),
@@ -451,7 +462,7 @@
     const stem = input.value.trim();
     if (!stem) return null;
     if (stem === field.dataset.filenameStem) return;
-    const res = await fetch(`/scores/${scoreId}/files/${fileId}/name`, {
+    const res = await Csrf.fetch(`/scores/${scoreId}/files/${fileId}/name`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: stem }),
@@ -527,7 +538,7 @@
   }
 
   async function removeAux(scoreId, fileId, row) {
-    const res = await fetch(`/scores/${scoreId}/files/${fileId}/remove`, { method: "POST" });
+    const res = await Csrf.fetch(`/scores/${scoreId}/files/${fileId}/remove`, { method: "POST" });
     const data = await res.json();
     if (!res.ok) {
       showToast(data.error || "Remove failed", true);
@@ -565,7 +576,7 @@
   async function addAuxFile(scoreId, file, listEl) {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch(`/scores/${scoreId}/files`, { method: "POST", body: fd });
+    const res = await Csrf.fetch(`/scores/${scoreId}/files`, { method: "POST", body: fd });
     const data = await res.json();
     if (!res.ok) {
       showToast(data.error || "Upload failed", true);
@@ -590,7 +601,7 @@
   async function addYoutube(scoreId, listEl) {
     const info = UploadHelpers.promptYoutube();
     if (!info) return;
-    const res = await fetch(`/scores/${scoreId}/files`, {
+    const res = await Csrf.fetch(`/scores/${scoreId}/files`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(info),
@@ -690,10 +701,14 @@
     if (deleteBtn) {
       deleteBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        if (!window.confirm("Delete this score permanently?")) return;
-        const res = await fetch(`/scores/${deleteBtn.dataset.scoreId}/delete`, { method: "POST" });
+        const hardDelete = item.dataset.hardDelete !== "false";
+        const msg = hardDelete
+          ? "Delete this score permanently? This removes it for everyone."
+          : "Remove this score from your library? It will remain available elsewhere.";
+        if (!window.confirm(msg)) return;
+        const res = await Csrf.fetch(`/scores/${deleteBtn.dataset.scoreId}/delete`, { method: "POST" });
         if (res.ok) item.remove();
-        else showToast("Delete failed", true);
+        else showToast(hardDelete ? "Delete failed" : "Remove failed", true);
       });
     }
   }

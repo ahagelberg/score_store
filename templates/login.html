@@ -13,6 +13,7 @@
       {% endif %}
     {% endwith %}
     <form method="post" action="{{ url_for('login') }}">
+      {% include "partials/csrf_field.html" %}
       <div class="form-group">
         <label for="username">Username</label>
         <input class="form-control" type="text" id="username" name="username" required autocomplete="username">

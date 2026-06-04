@@ -154,6 +154,13 @@
     toolbar.appendChild(resetBtn);
   }
 
+  function refreshWorkspace(workspace) {
+    if (!workspace) return;
+    const layout = loadLayout();
+    const viewMode = workspace.dataset.libraryView || VIEW_LIST;
+    applyFolderFilter(workspace, viewMode, storedFolderId(layout, workspace));
+  }
+
   function init(options) {
     stripLayoutParams();
     const layout = loadLayout();
@@ -161,7 +168,7 @@
     if (options?.choirReset) initChoirReset(options.root);
   }
 
-  window.LibraryLayout = { init, syncScoreIdsForWorkspace: syncScoreIds, loadLayout, saveLayout, STORAGE_KEY };
+  window.LibraryLayout = { init, syncScoreIdsForWorkspace: syncScoreIds, refreshWorkspace, loadLayout, saveLayout, STORAGE_KEY };
   document.addEventListener("DOMContentLoaded", () => {
     const root = document.getElementById("library-root");
     const maestroRoot = document.getElementById("maestro-root");

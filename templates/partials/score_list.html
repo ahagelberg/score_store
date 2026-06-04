@@ -2,8 +2,9 @@
   {% set mains = score.files | default([]) | selectattr('role', 'equalto', 'main') | list %}
   {% set score_main = mains[0] if mains else none %}
   {% set aux_files = score.files | default([]) | rejectattr('role', 'equalto', 'main') | list %}
-  {% set can_edit = current_user.role == 'maestro' or score.owner_id == current_user.id %}
-  {% set can_delete = can_edit %}
+  {% set can_edit = user_can_edit_score(current_user, score) %}
+  {% set can_hard_delete = user_can_hard_delete_score(current_user, score) %}
+  {% set can_delete = user_can_remove_score(current_user, score, library_panel.lib_id) %}
   {% set score_folder_id = library_panel.lib.score_folders.get(score.id, 'root') %}
   {% set filter_text = [score.title, score.composer, score.arranger, score.description, score.tags|default([])|join(' ')] | select | join(' ') %}
   {% include "partials/score_accordion.html" %}

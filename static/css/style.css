@@ -125,6 +125,14 @@ a:hover {
   text-decoration: none;
 }
 
+button.header-link {
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -1249,7 +1257,95 @@ textarea.form-control {
 }
 
 .dialog-actions-start {
+  display: flex;
+  gap: 6px;
   margin-right: auto;
+}
+
+.dialog-actions-start + .dialog-actions-start {
+  margin-left: 0;
+}
+
+.user-handout-dialog {
+  max-width: 440px;
+}
+
+.user-handout-dialog-heading {
+  margin: 0 0 0.75rem;
+  font-size: 13px;
+}
+
+.user-handout-title {
+  margin: 0 0 0.35rem;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.user-handout-heading {
+  margin: 0 0 0.75rem;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.user-handout-details {
+  margin: 0 0 0.75rem;
+}
+
+.user-handout-row {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.5rem;
+  align-items: baseline;
+}
+
+.user-handout-row dt {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.user-handout-row dd {
+  margin: 0;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.user-handout-password {
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
+  font-weight: 600;
+}
+
+.user-handout-url {
+  color: var(--color-primary);
+  word-break: break-all;
+}
+
+.user-handout-note {
+  margin: 0 0 0.75rem;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.user-handout-steps-title {
+  margin: 0 0 0.35rem;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.user-handout-steps-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.user-handout-steps-list li + li {
+  margin-top: 0.35rem;
 }
 
 /* Maestro layout */
@@ -1342,6 +1438,42 @@ textarea.form-control {
 
 body.score-viewer-open {
   overflow: hidden;
+}
+
+.score-view-page {
+  min-height: calc(100vh - var(--header-height));
+}
+
+.score-view-header {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.score-view-heading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.score-view-fallback {
+  padding: 16px;
+}
+
+.score-view-fallback-actions {
+  margin: 0 0 12px;
+}
+
+.score-view-pdf-fallback {
+  display: block;
+  width: 100%;
+  min-height: calc(100vh - var(--header-height) - 80px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.score-view-fallback-note {
+  margin: 0;
+  color: var(--color-muted);
 }
 
 .viewer-score-nav-btn:disabled,

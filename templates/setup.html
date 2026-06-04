@@ -14,6 +14,7 @@
       {% endif %}
     {% endwith %}
     <form method="post" action="{{ url_for('setup') }}">
+      {% include "partials/csrf_field.html" %}
       <div class="form-group">
         <label for="username">Admin username</label>
         <input class="form-control" type="text" id="username" name="username" value="{{ default_username }}" required autocomplete="username">

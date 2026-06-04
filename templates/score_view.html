@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ score.title }} — {{ browser_title }}{% endblock %}
+{% block body %}
+<div id="score-view-page" class="score-view-page"
+     data-score-id="{{ score.id }}"
+     data-score-ids='{{ score_ids|tojson }}'
+     data-view-nav='{{ view_nav|tojson }}'
+     data-back-url="{{ back_url }}">
+  <header class="site-header score-view-header">
+    <nav class="score-view-header-nav">
+      <a class="header-link score-view-back" href="{{ back_url }}">← Back to library</a>
+    </nav>
+    <h1 class="score-view-heading">{{ score.title }}{% if score.composer %} — {{ score.composer }}{% endif %}</h1>
+  </header>
+  <noscript>
+    <div class="score-view-fallback">
+      {% if main_file_url %}
+      <p class="score-view-fallback-actions">
+        <a class="btn btn-primary" href="{{ download_url }}">Download PDF</a>
+      </p>
+      <embed class="score-view-pdf-fallback" src="{{ main_file_url }}" type="application/pdf" title="{{ score.title }}">
+      {% else %}
+      <p class="score-view-fallback-note">No PDF preview is available for this score.</p>
+      {% endif %}
+    </div>
+  </noscript>
+</div>
+{% include "partials/score_viewer_overlay.html" %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/pdfjs/pdf.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/print.js') }}"></script>
+<script src="{{ url_for('static', filename='js/viewer.js') }}"></script>
+{% endblock %}
