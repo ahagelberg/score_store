@@ -16,8 +16,7 @@
   function promptYoutube() {
     const url = window.prompt("YouTube URL");
     if (!url) return null;
-    const name = window.prompt("Display name", "YouTube") || "YouTube";
-    return { url, name };
+    return { url };
   }
 
   window.UploadHelpers = {

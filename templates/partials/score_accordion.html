@@ -8,11 +8,14 @@
     data-library-ctx="{{ library_panel.library_ctx }}"
     data-folder-id="{{ library_panel.folder_id }}"
     data-can-edit="{{ 'true' if can_edit|default(false) else 'false' }}"
-    {% if library_panel.draggable_score %}draggable="true" data-drag-score="true"{% endif %}>
-  <div class="score-summary" data-score-summary>
+    {% if library_panel.draggable_score %}data-drag-score="true"{% endif %}>
+  <div class="score-summary{% if score.id %} score-summary-clickable{% endif %}" data-score-summary{% if library_panel.draggable_score %} draggable="true"{% endif %}>
     <div class="score-summary-main">
-      <span class="score-summary-title">{{ score.title|default('New score') }}</span>
-      {% if score.composer %}<span class="score-summary-composer">{{ score.composer }}</span>{% endif %}
+      <span class="score-aux-icon{% if not aux_files|default([]) %} score-aux-icon-empty{% endif %}" data-score-aux-indicator aria-hidden="true" title="Additional files">{% include "partials/icon_paperclip.svg.html" %}</span>
+      <div class="score-summary-text">
+        <span class="score-summary-title">{{ score.title|default('New score') }}</span>
+        {% if score.composer %}<span class="score-summary-composer">{{ score.composer }}</span>{% endif %}
+      </div>
       {% if not score_main %}<span class="score-badge-warn">No main PDF</span>{% endif %}
     </div>
     <div class="score-summary-end">
@@ -50,17 +53,6 @@
   </div>
   <div class="score-editor{% if not expanded|default(false) %} hidden{% endif %}" data-score-editor>
     {% set main_file = score_main %}
-    <div class="score-panel-main"{% if main_file %} draggable="true" data-file-id="{{ main_file.id }}" data-drag-kind="main"{% endif %}>
-      <span class="score-panel-main-icon">📄</span>
-      <div class="score-panel-main-info">
-        {% if can_edit|default(false) and main_file %}
-        <input class="form-control score-panel-main-name" type="text" data-main-name-input data-file-id="{{ main_file.id }}" value="{{ main_file.name }}">
-        {% else %}
-        <div class="score-panel-main-name">{{ main_file.name if main_file else 'No main file' }}</div>
-        {% endif %}
-        <div class="score-panel-main-sub">{% if main_file %}{{ main_file.stored_name }}{% elif staged_filename %}{{ staged_filename }}{% endif %}</div>
-      </div>
-    </div>
     <div class="score-section" data-section="details">
       <div class="score-section-header" data-section-toggle>
         <span>Details</span>
@@ -88,6 +80,12 @@
           {% set tags_json = score.tags|default([])|tojson %}
           {% include "partials/tag_input.html" %}
         </div>
+        {% if main_file %}
+        {% set file_id = main_file.id %}
+        {% set name = main_file.name %}
+        {% set stored_name = main_file.stored_name %}
+        {% include "partials/filename_field.html" %}
+        {% endif %}
       </div>
     </div>
     <div class="score-section" data-section="aux">
@@ -105,7 +103,11 @@
             <li class="aux-file-item" draggable="true" data-file-id="{{ f.id }}" data-drag-kind="aux">
               <span class="aux-file-icon" aria-hidden="true">📄</span>
               <span class="aux-file-type">{{ aux_file_type_label(f) }}</span>
-              <span class="aux-file-name">{{ f.name }}</span>
+              {% set file_id = f.id %}
+              {% set name = f.name %}
+              {% set stored_name = f.stored_name %}
+              {% set youtube_url = f.url if f.media == 'youtube' else '' %}
+              {% include "partials/aux_filename_field.html" %}
               {% if can_edit|default(false) %}
               <button type="button" class="aux-file-remove" data-remove-file="{{ f.id }}" title="Remove">×</button>
               {% endif %}

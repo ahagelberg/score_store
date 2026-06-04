@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% block title %}Maestro — {{ app_title }}{% endblock %}
 {% block body %}
 <header class="site-header">
   <h1>{{ app_title }}</h1>
@@ -27,7 +26,7 @@
           <li class="user-list-item">
             <a class="user-list-link{% if selected_user == u.id %} active{% endif %}"
                href="{{ user_select_url(u.id, query, active_tag) }}">{{ u.display_name }}</a>
-            <button type="button" class="btn-icon btn-icon-sm user-edit-btn" data-user-id="{{ u.id }}" data-display-name="{{ u.display_name }}" data-username="{{ u.username }}" data-role="{{ u.role }}" title="Edit">⚙</button>
+            <button type="button" class="btn-icon btn-icon-sm user-edit-btn" data-user-id="{{ u.id }}" data-display-name="{{ u.display_name }}" data-username="{{ u.username }}" data-role="{{ u.role }}" data-password="{{ u|user_password_display|e }}" title="Edit" aria-label="Edit">✎</button>
           </li>
           {% endfor %}
         </ul>

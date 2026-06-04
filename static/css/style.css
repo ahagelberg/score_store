@@ -25,6 +25,7 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-size-ui: 13px;
   --font-size-score-title: 14px;
+  --score-aux-icon-size: 14px;
   --btn-height: 24px;
   --control-height: 26px;
   --header-height: 36px;
@@ -38,6 +39,7 @@
   --icon-download-size: 18px;
   --viewer-header-icon-btn-size: 28px;
   --viewer-header-icon-size: 20px;
+  --viewer-file-icon-size: 16px;
   --viewer-score-nav-btn-size: 20px;
   --viewer-score-nav-symbol-size: 18px;
   --viewer-pdf-page-arrow-width: 20%;
@@ -842,6 +844,16 @@ textarea.form-control {
   overflow: hidden;
 }
 
+.score-summary-text {
+  display: grid;
+  grid-template-columns: max-content minmax(0, auto);
+  align-items: baseline;
+  column-gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
 .score-summary-end {
   display: flex;
   align-items: center;
@@ -865,22 +877,30 @@ textarea.form-control {
 
 .score-summary-title {
   font-weight: 600;
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--font-size-score-title);
   line-height: 1.3;
   color: var(--color-text);
 }
 
-.score-summary-title-toggle {
+.score-summary-clickable {
   cursor: pointer;
 }
 
-.score-summary-title-toggle:hover {
+.score-summary-clickable[draggable="true"] {
+  cursor: grab;
+}
+
+.score-summary-clickable[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.score-summary-clickable[draggable="true"] .score-summary-actions button,
+.score-summary-clickable[draggable="true"] .score-summary-actions a {
+  cursor: pointer;
+}
+
+.score-summary-clickable:hover .score-summary-title {
   color: var(--color-primary);
 }
 
@@ -890,9 +910,7 @@ textarea.form-control {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 0 1 auto;
   min-width: 0;
-  max-width: 100%;
 }
 
 .score-summary-meta {
@@ -918,51 +936,31 @@ textarea.form-control {
   background: #fef3c7;
   color: #92400e;
   border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.score-aux-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--score-aux-icon-size);
+  color: var(--color-muted);
+}
+
+.score-aux-icon-empty {
+  visibility: hidden;
+}
+
+.score-aux-icon .icon-paperclip {
+  width: var(--score-aux-icon-size);
+  height: var(--score-aux-icon-size);
 }
 
 .score-accordion-expanded .score-editor {
   border-top: 1px solid var(--color-border-light);
   padding: 8px;
   background: #fafafa;
-}
-
-.score-accordion-view .score-panel-main,
-.score-accordion-view .score-section[data-section="details"],
-.score-accordion-view .score-editor-actions,
-.score-accordion-view .add-youtube-btn,
-.score-accordion-view .aux-drop-zone,
-.score-accordion-view .aux-file-remove {
-  display: none;
-}
-
-.score-panel-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--color-panel);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius);
-  margin-bottom: 6px;
-}
-
-.score-panel-main-icon {
-  font-size: 1.1rem;
-}
-
-.score-panel-main-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.score-panel-main-name {
-  font-weight: 500;
-  font-size: 12px;
-}
-
-.score-panel-main-sub {
-  font-size: 10px;
-  color: var(--color-muted);
 }
 
 .score-section {
@@ -1059,6 +1057,64 @@ textarea.form-control {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.aux-file-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.aux-file-link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.filename-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.aux-file-name-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.filename-field-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filename-field-edit-row {
+  display: none;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+}
+
+.filename-field-ext {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.filename-field-editing .filename-field-value,
+.filename-field-editing .filename-field-edit {
+  display: none;
+}
+
+.filename-field-editing .filename-field-edit-row {
+  display: flex;
+}
+
+.filename-field-edit-row .filename-field-input {
+  display: block;
+  flex: 1;
+  min-width: 0;
 }
 
 .aux-file-remove {
@@ -1192,6 +1248,10 @@ textarea.form-control {
   margin-top: 0.75rem;
 }
 
+.dialog-actions-start {
+  margin-right: auto;
+}
+
 /* Maestro layout */
 .maestro-layout {
   display: grid;
@@ -1308,6 +1368,9 @@ body.score-viewer-open {
 }
 
 .viewer-toolbar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 8px;
   border-radius: var(--radius);
   border: 1px solid var(--color-border-light);
@@ -1318,6 +1381,23 @@ body.score-viewer-open {
   cursor: pointer;
   white-space: nowrap;
   text-decoration: none;
+}
+
+.viewer-file-icon {
+  display: flex;
+  flex-shrink: 0;
+  width: var(--viewer-file-icon-size);
+  height: var(--viewer-file-icon-size);
+}
+
+.viewer-file-icon-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.viewer-file-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .viewer-toolbar-item:hover {
@@ -1661,11 +1741,11 @@ body.score-viewer-open {
 }
 
 .viewer-pdf-page-arrow-up .viewer-pdf-page-arrow-symbol {
-  transform: rotate(-90deg);
+  transform: rotate(90deg);
 }
 
 .viewer-pdf-page-arrow-down .viewer-pdf-page-arrow-symbol {
-  transform: rotate(90deg);
+  transform: rotate(-90deg);
 }
 
 .viewer-pdf-page-arrow:hover:not(.viewer-pdf-page-arrow-disabled),

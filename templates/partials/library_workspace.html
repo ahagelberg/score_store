@@ -1,7 +1,8 @@
 <div class="library-workspace" data-library-view="list"
      data-library-ctx="{{ library_panel.library_ctx }}"
      data-score-ids='{{ library_panel.score_ids|tojson }}'
-     data-view-nav='{{ library_panel.view_nav|tojson }}'>
+     data-view-nav='{{ library_panel.view_nav|tojson }}'
+     data-summary-opens-viewer="{{ 'true' if library_panel.summary_opens_viewer else 'false' }}">
   <div class="workspace-toolbar">
     {% include "partials/filter_bar.html" %}
     {% if library_panel.all_tags %}

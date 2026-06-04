@@ -1,29 +1,56 @@
 (function () {
   "use strict";
 
+  const MAESTRO_ROLE = "maestro";
+  let editUserPassword = "";
+
+  function configurePasswordField(mode, user, pw, hint, roleEl) {
+    const role = roleEl ? roleEl.value : (user?.role || "");
+    const isMaestro = role === MAESTRO_ROLE;
+    if (mode === "edit" && user) {
+      pw.required = false;
+      if (isMaestro) {
+        pw.value = "";
+        hint.textContent = "Admin passwords are not stored for viewing";
+      } else {
+        pw.value = user.password || "";
+        hint.textContent = user.password
+          ? "Leave blank to keep current password"
+          : "Not on file — enter to set and store";
+      }
+      return;
+    }
+    pw.required = true;
+    pw.value = "";
+    hint.textContent = "Required for new users";
+  }
+
   function openDialog(mode, user) {
     const overlay = document.getElementById("user-dialog-overlay");
     const form = document.getElementById("user-dialog-form");
     const title = document.getElementById("user-dialog-title");
     const pw = document.getElementById("user-password");
     const hint = document.getElementById("user-password-hint");
-    if (!overlay || !form) return;
+    const roleEl = document.getElementById("user-role");
+    const deleteBtn = document.getElementById("user-delete-btn");
+    if (!overlay || !form || !pw || !hint) return;
     if (mode === "edit" && user) {
       title.textContent = "Edit user";
       form.action = `/maestro/users/${user.id}/edit`;
       document.getElementById("user-dialog-user-id").value = user.id;
       document.getElementById("user-display-name").value = user.displayName;
       document.getElementById("user-username").value = user.username;
-      document.getElementById("user-role").value = user.role;
-      pw.required = false;
-      hint.textContent = "Leave blank to keep current password";
+      if (roleEl) roleEl.value = user.role;
+      editUserPassword = user.password || "";
+      if (deleteBtn) deleteBtn.classList.remove("hidden");
     } else {
       title.textContent = "Add user";
       form.action = "/maestro/users/new";
       form.reset();
-      pw.required = true;
-      hint.textContent = "Required for new users";
+      editUserPassword = "";
+      if (deleteBtn) deleteBtn.classList.add("hidden");
     }
+    configurePasswordField(mode, user, pw, hint, roleEl);
     overlay.classList.remove("hidden");
   }
 
@@ -52,13 +79,42 @@
           displayName: btn.dataset.displayName,
           username: btn.dataset.username,
           role: btn.dataset.role,
+          password: btn.dataset.password || "",
         });
       });
     });
 
+    const roleEl = document.getElementById("user-role");
+    const pw = document.getElementById("user-password");
+    const hint = document.getElementById("user-password-hint");
+    if (roleEl && pw && hint) {
+      roleEl.addEventListener("change", () => {
+        const mode = document.getElementById("user-dialog-user-id")?.value ? "edit" : "new";
+        const user = mode === "edit" ? { role: roleEl.value, password: editUserPassword } : null;
+        configurePasswordField(mode, user, pw, hint, roleEl);
+      });
+    }
+
     document.querySelectorAll("[data-dialog-close]").forEach((el) => {
       el.addEventListener("click", closeDialog);
     });
+
+    const deleteBtn = document.getElementById("user-delete-btn");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", () => {
+        const userId = document.getElementById("user-dialog-user-id").value;
+        if (!userId) return;
+        const displayName = document.getElementById("user-display-name").value || "this user";
+        const msg =
+          `Delete "${displayName}"?\n\nTheir library and assignments will be removed. Scores they own will stay in the global library under system ownership.`;
+        if (!window.confirm(msg)) return;
+        const form = document.createElement("form");
+        form.method = "POST";
+        form.action = `/maestro/users/${userId}/delete`;
+        document.body.appendChild(form);
+        form.submit();
+      });
+    }
 
     const overlay = document.getElementById("user-dialog-overlay");
     if (overlay) {

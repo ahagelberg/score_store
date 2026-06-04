@@ -1,13 +1,16 @@
 """Filesystem JSON store for score portal."""
 
+import hashlib
 import json
 import os
 import re
 import shutil
 import threading
-import uuid
+import base64
 from datetime import datetime, timezone
 from pathlib import Path
+
+from cryptography.fernet import Fernet, InvalidToken
 
 APP_ROOT = Path(__file__).resolve().parent
 INSTANCE_DIR = APP_ROOT / "instance"
@@ -24,14 +27,27 @@ AUX_EXTENSIONS = frozenset({
     "mp4", "mkv", "webm",
 })
 YOUTUBE_DOMAINS = frozenset({"youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com"})
+YOUTUBE_OEMBED_URL = "https://www.youtube.com/oembed"
+YOUTUBE_OEMBED_TIMEOUT_SEC = 10
+YOUTUBE_DEFAULT_NAME = "YouTube"
 
 ROOT_FOLDER_ID = "root"
+ROOT_FOLDER_DISPLAY_NAME = "All scores"
+GLOBAL_LIBRARY_DISPLAY_NAME = "Global library"
+USER_LIBRARY_ID_PREFIX = "u-"
 LIBRARY_VIEW_LIST = "list"
 LIBRARY_VIEW_FOLDER = "folder"
 DEFAULT_LIBRARY_VIEW = LIBRARY_VIEW_LIST
 FILE_NAME_MAX_LEN = 80
 TAG_MAX_LEN = 40
 GLOBAL_LIBRARY_ID = "_global"
+SYSTEM_OWNER_ID = "_system"
+MAESTRO_ROLE = "maestro"
+PASSWORD_ENCRYPT_PREFIX = "enc:"
+LEGACY_SCRYPT_PASSWORD_PREFIX = "scrypt:"
+SCORE_ID_PREFIX = "s-"
+UNSAFE_PATH_CHAR_PATTERN = re.compile(r'[/\\:*?"<>|\0]')
+MULTI_UNDERSCORE_PATTERN = re.compile(r"_+")
 
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
@@ -111,7 +127,7 @@ def needs_setup() -> bool:
     return True
 
 
-def complete_setup(username: str, password: str, data_dir: Path, password_hash_fn) -> dict:
+def complete_setup(username: str, password: str, data_dir: Path, secret: str) -> dict:
     if len(password) < SETUP_PASSWORD_MIN_LEN:
         raise ValueError(f"Password must be at least {SETUP_PASSWORD_MIN_LEN} characters")
     uname = username.strip().lower()
@@ -121,16 +137,17 @@ def complete_setup(username: str, password: str, data_dir: Path, password_hash_f
     save_instance_config(resolved)
     reconfigure_data_dir(resolved)
     ensure_data_dirs()
-    users = [{
-        "id": new_id("u-"),
+    user = {
+        "id": user_id_from_display_name("Maestro"),
         "display_name": "Maestro",
         "username": uname,
-        "password_hash": password_hash_fn(password),
-        "role": "maestro",
-    }]
+        "role": MAESTRO_ROLE,
+    }
+    set_user_password(user, password, secret)
+    users = [user]
     save_users(users)
     load_library(GLOBAL_LIBRARY_ID)
-    return users[0]
+    return user
 
 
 def _lock_for(path: Path) -> threading.Lock:
@@ -169,13 +186,194 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def new_id(prefix: str = "") -> str:
-    uid = uuid.uuid4().hex[:12]
-    return f"{prefix}{uid}" if prefix else uid
+def _basename_only(filename: str) -> str:
+    return Path(filename).name.replace("\\", "/").split("/")[-1]
+
+
+def split_filename(filename: str) -> tuple[str, str]:
+    name = _basename_only(filename)
+    if not name or name in (".", ".."):
+        return "file", ""
+    dot = name.rfind(".")
+    if dot > 0:
+        return name[:dot], name[dot + 1 :].lower()
+    return name, ""
+
+
+def sanitize_stored_stem(text: str, max_len: int = FILE_NAME_MAX_LEN) -> str:
+    text = UNSAFE_PATH_CHAR_PATTERN.sub("_", _basename_only(text))
+    text = text.strip(" .")
+    text = MULTI_UNDERSCORE_PATTERN.sub("_", text)
+    if len(text) > max_len:
+        text = text[:max_len].rstrip(" ._")
+    return text or "file"
+
+
+def _slug(text: str, max_len: int = FILE_NAME_MAX_LEN) -> str:
+    return sanitize_stored_stem(text.strip(), max_len)
+
+
+def sanitize_stored_filename(filename: str) -> str:
+    stem, ext = split_filename(filename)
+    stem = sanitize_stored_stem(stem)
+    if ext:
+        ext = sanitize_stored_stem(ext, max_len=20).lower()
+        return f"{stem}.{ext}" if ext else stem
+    return stem
+
+
+def _unique_with_suffix(base: str, taken: set[str]) -> str:
+    if base not in taken:
+        return base
+    n = 2
+    while f"{base}_{n}" in taken:
+        n += 1
+    return f"{base}_{n}"
+
+
+def unique_id(label: str, taken: set[str], prefix: str = "") -> str:
+    return _unique_with_suffix(f"{prefix}{_slug(label)}", taken)
+
+
+def _unique_basename(stem: str, ext: str, taken: set[str]) -> str:
+    candidate = f"{stem}.{ext}" if ext else stem
+    if candidate not in taken:
+        return candidate
+    n = 2
+    while True:
+        suffixed = f"{stem}_{n}.{ext}" if ext else f"{stem}_{n}"
+        if suffixed not in taken:
+            return suffixed
+        n += 1
+
+
+def unique_stored_filename(filename: str, files_dir: Path) -> str:
+    stored = sanitize_stored_filename(filename)
+    taken = {p.name for p in files_dir.iterdir() if p.is_file()} if files_dir.exists() else set()
+    if stored not in taken:
+        return stored
+    stem, ext = split_filename(stored)
+    return _unique_basename(stem, ext, taken)
+
+
+def file_id_from_name(filename: str, existing_ids: set[str]) -> str:
+    stem, _ = split_filename(filename)
+    return unique_id(stem, existing_ids)
+
+
+def _existing_score_dir_names() -> set[str]:
+    if not SCORES_DIR.exists():
+        return set()
+    return {p.name for p in SCORES_DIR.iterdir() if p.is_dir()}
+
+
+def score_id_from_label(label: str) -> str:
+    return unique_id(label, _existing_score_dir_names(), SCORE_ID_PREFIX)
+
+
+def score_id_from_filename(filename: str) -> str:
+    stem, _ = split_filename(filename)
+    return score_id_from_label(stem)
+
+
+def score_id_from_title(title: str) -> str:
+    return score_id_from_label(title)
+
+
+def folder_id_from_name(name: str, folders: list[dict]) -> str:
+    return unique_id(name, {f["id"] for f in folders})
+
+
+def user_id_from_display_name(display_name: str) -> str:
+    return unique_id(display_name, {u["id"] for u in load_users()}, USER_LIBRARY_ID_PREFIX)
+
+
+def score_owner_id(user: dict) -> str:
+    if user.get("role") == MAESTRO_ROLE:
+        return SYSTEM_OWNER_ID
+    return user["id"]
+
+
+def is_maestro_role(role: str) -> bool:
+    return role == MAESTRO_ROLE
+
+
+def password_storage_secret() -> str:
+    return os.environ.get("SECRET_KEY", "dev-change-me-in-production")
+
+
+def _password_fernet(secret: str) -> Fernet:
+    digest = hashlib.sha256(secret.encode("utf-8")).digest()
+    key = base64.urlsafe_b64encode(digest)
+    return Fernet(key)
+
+
+def is_encrypted_password(stored: str) -> bool:
+    return stored.startswith(PASSWORD_ENCRYPT_PREFIX)
+
+
+def encrypt_stored_password(plain: str, secret: str) -> str:
+    token = _password_fernet(secret).encrypt(plain.encode("utf-8")).decode("ascii")
+    return PASSWORD_ENCRYPT_PREFIX + token
+
+
+def decrypt_stored_password(stored: str, secret: str) -> str:
+    if not is_encrypted_password(stored):
+        raise ValueError("Password is not encrypted")
+    token = stored[len(PASSWORD_ENCRYPT_PREFIX):].encode("ascii")
+    return _password_fernet(secret).decrypt(token).decode("utf-8")
+
+
+def set_user_password(user: dict, password: str, secret: str) -> None:
+    if is_maestro_role(user.get("role", "")):
+        user["password"] = encrypt_stored_password(password, secret)
+    else:
+        user["password"] = password
+
+
+def finalize_user_role(user: dict, secret: str) -> None:
+    stored = user.get("password")
+    if not stored:
+        return
+    if is_maestro_role(user.get("role", "")):
+        if not is_encrypted_password(stored):
+            user["password"] = encrypt_stored_password(stored, secret)
+    elif is_encrypted_password(stored):
+        user.pop("password", None)
+
+
+def password_for_display(user: dict) -> str:
+    if is_maestro_role(user.get("role", "")):
+        return ""
+    stored = user.get("password") or ""
+    if is_encrypted_password(stored) or stored.startswith(LEGACY_SCRYPT_PASSWORD_PREFIX):
+        return ""
+    return stored
+
+
+def verify_user_password(user: dict, password: str, secret: str) -> bool:
+    stored = user.get("password")
+    if not stored:
+        return False
+    if is_encrypted_password(stored):
+        try:
+            return decrypt_stored_password(stored, secret) == password
+        except InvalidToken:
+            return False
+    return stored == password
 
 
 def load_users() -> list[dict]:
-    return _read_json(USERS_PATH, [])
+    users = _read_json(USERS_PATH, [])
+    changed = False
+    for user in users:
+        legacy_hash = user.pop("password_hash", None)
+        if legacy_hash is not None and not user.get("password"):
+            user["password"] = legacy_hash
+            changed = True
+    if changed:
+        _write_json(USERS_PATH, users)
+    return users
 
 
 def save_users(users: list[dict]) -> None:
@@ -201,21 +399,56 @@ def library_path(library_id: str) -> Path:
     return LIBRARIES_DIR / f"{library_id}.json"
 
 
-def default_library() -> dict:
-    return {
-        "folders": [{"id": ROOT_FOLDER_ID, "name": "All scores"}],
+def is_user_library_id(library_id: str) -> bool:
+    return library_id.startswith(USER_LIBRARY_ID_PREFIX)
+
+
+def default_library(library_id: str) -> dict:
+    lib = {
+        "library_id": library_id,
+        "folders": [{"id": ROOT_FOLDER_ID, "name": ROOT_FOLDER_DISPLAY_NAME}],
         "score_folders": {},
         "score_order": [],
         "file_aliases": {},
     }
+    if library_id == GLOBAL_LIBRARY_ID:
+        lib["display_name"] = GLOBAL_LIBRARY_DISPLAY_NAME
+    elif is_user_library_id(library_id):
+        lib["owner_id"] = library_id
+        user = get_user(library_id)
+        lib["display_name"] = user["display_name"] if user else library_id
+    return lib
+
+
+def sync_library_metadata(library_id: str, lib: dict) -> bool:
+    changed = False
+    if lib.get("library_id") != library_id:
+        lib["library_id"] = library_id
+        changed = True
+    if library_id == GLOBAL_LIBRARY_ID:
+        if lib.get("display_name") != GLOBAL_LIBRARY_DISPLAY_NAME:
+            lib["display_name"] = GLOBAL_LIBRARY_DISPLAY_NAME
+            changed = True
+    elif is_user_library_id(library_id):
+        if lib.get("owner_id") != library_id:
+            lib["owner_id"] = library_id
+            changed = True
+        user = get_user(library_id)
+        expected_name = user["display_name"] if user else library_id
+        if lib.get("display_name") != expected_name:
+            lib["display_name"] = expected_name
+            changed = True
+    return changed
 
 
 def load_library(library_id: str) -> dict:
-    lib = _read_json(library_path(library_id), default_library())
+    lib = _read_json(library_path(library_id), default_library(library_id))
     if not lib.get("folders"):
-        lib["folders"] = [{"id": ROOT_FOLDER_ID, "name": "All scores"}]
+        lib["folders"] = [{"id": ROOT_FOLDER_ID, "name": ROOT_FOLDER_DISPLAY_NAME}]
     for key in ("score_folders", "score_order", "file_aliases"):
         lib.setdefault(key, {} if key != "score_order" else [])
+    if sync_library_metadata(library_id, lib):
+        save_library(library_id, lib)
     return lib
 
 
@@ -235,7 +468,22 @@ def load_score_meta(score_id: str) -> dict | None:
     path = score_meta_path(score_id)
     if not path.exists():
         return None
-    return _read_json(path, {})
+    meta = _read_json(path, {})
+    if migrate_score_meta_access(meta):
+        save_score_meta(score_id, meta)
+    return meta
+
+
+def migrate_score_meta_access(meta: dict) -> bool:
+    if "assigned_user_ids" not in meta:
+        return False
+    assigned = meta.pop("assigned_user_ids")
+    score_id = meta.get("id")
+    if score_id:
+        for user_id in assigned:
+            if is_user_library_id(user_id):
+                assign_score_to_folder(user_id, score_id, ROOT_FOLDER_ID)
+    return True
 
 
 def save_score_meta(score_id: str, meta: dict) -> None:
@@ -356,6 +604,23 @@ def youtube_embed_url(url: str) -> str | None:
     return None
 
 
+def fetch_youtube_title(url: str) -> str | None:
+    from urllib.parse import urlencode
+    from urllib.request import urlopen
+    if not validate_youtube_url(url):
+        return None
+    query = urlencode({"url": url.strip(), "format": "json"})
+    try:
+        with urlopen(f"{YOUTUBE_OEMBED_URL}?{query}", timeout=YOUTUBE_OEMBED_TIMEOUT_SEC) as resp:
+            data = json.loads(resp.read().decode())
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    title = (data.get("title") or "").strip()
+    if not title:
+        return None
+    return title[:FILE_NAME_MAX_LEN]
+
+
 def validate_score_files(files: list[dict], require_main: bool = True) -> None:
     mains = [f for f in files if f.get("role") == "main"]
     if require_main:
@@ -429,14 +694,22 @@ def remove_score_from_library(library_id: str, score_id: str) -> None:
     save_library(library_id, lib)
 
 
+def library_has_score(library_id: str, score_id: str) -> bool:
+    lib = load_library(library_id)
+    return score_id in lib.get("score_order", [])
+
+
+def user_library_score_ids(user_id: str) -> list[str]:
+    return load_library(user_id).get("score_order", [])
+
+
 def _write_uploaded_file(score_id: str, upload_file) -> tuple[str, str]:
-    ext = extension_of(upload_file.filename or "file")
-    stored_name = f"{uuid.uuid4().hex}.{ext}"
     dest_dir = score_dir(score_id) / "files"
     dest_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = unique_stored_filename(upload_file.filename or "file", dest_dir)
     dest = dest_dir / stored_name
     upload_file.save(dest)
-    return stored_name, ext
+    return stored_name, extension_of(stored_name)
 
 
 def create_score_from_upload(
@@ -450,16 +723,17 @@ def create_score_from_upload(
     ext = extension_of(upload_file.filename or "")
     if ext not in MAIN_EXTENSIONS:
         raise ValueError("Main file must be PDF")
-    score_id = new_id("s-")
+    upload_name = upload_file.filename or "score.pdf"
+    score_id = score_id_from_filename(upload_name)
     sdir = score_dir(score_id)
     sdir.mkdir(parents=True, exist_ok=True)
     stored_name, _ = _write_uploaded_file(score_id, upload_file)
-    file_id = new_id("f-")
+    file_id = file_id_from_name(upload_name, set())
     files = [{
         "id": file_id,
         "role": "main",
         "stored_name": stored_name,
-        "name": basename_display_name(upload_file.filename or "score.pdf"),
+        "name": basename_display_name(upload_name),
         "media": "pdf",
     }]
     validate_score_files(files)
@@ -467,7 +741,6 @@ def create_score_from_upload(
         "id": score_id,
         **meta_fields,
         "owner_id": owner_id,
-        "assigned_user_ids": [],
         "files": files,
         "created_at": utc_now_iso(),
     }
@@ -497,11 +770,13 @@ def add_aux_file(score_id: str, upload_file) -> dict:
     if ext not in AUX_EXTENSIONS:
         raise ValueError(f"File type not allowed: {ext}")
     stored_name, ext = _write_uploaded_file(score_id, upload_file)
+    existing_ids = {f["id"] for f in meta.get("files", [])}
+    upload_name = upload_file.filename or "file"
     entry = {
-        "id": new_id("f-"),
+        "id": file_id_from_name(upload_name, existing_ids),
         "role": "aux",
         "stored_name": stored_name,
-        "name": basename_display_name(upload_file.filename or "file"),
+        "name": basename_display_name(upload_name),
         "media": media_from_extension(ext),
     }
     meta.setdefault("files", []).append(entry)
@@ -516,9 +791,13 @@ def add_youtube_aux(score_id: str, url: str, name: str) -> dict:
     meta = load_score_meta(score_id)
     if not meta:
         raise ValueError("Score not found")
-    display = (name or "YouTube").strip()[:FILE_NAME_MAX_LEN] or "YouTube"
+    display = (name or "").strip()
+    if not display:
+        display = fetch_youtube_title(url) or YOUTUBE_DEFAULT_NAME
+    display = display[:FILE_NAME_MAX_LEN] or YOUTUBE_DEFAULT_NAME
+    existing_ids = {f["id"] for f in meta.get("files", [])}
     entry = {
-        "id": new_id("f-"),
+        "id": file_id_from_name(display, existing_ids),
         "role": "aux",
         "name": display,
         "media": "youtube",
@@ -638,14 +917,14 @@ def split_file_to_new_score(
     if target.get("media") != "pdf":
         raise ValueError("Only PDF can become main score")
     meta_fields = normalize_metadata(metadata)
-    new_score_id = new_id("s-")
+    new_score_id = score_id_from_title(meta_fields["title"])
     score_dir(new_score_id).mkdir(parents=True, exist_ok=True)
     (score_dir(new_score_id) / "files").mkdir(exist_ok=True)
     stored = target["stored_name"]
     _move_blob(src_score_id, stored, new_score_id)
     src["files"] = [f for f in src["files"] if f["id"] != file_id]
     new_file = {
-        "id": new_id("f-"),
+        "id": target["id"],
         "role": "main",
         "stored_name": stored,
         "name": target.get("name", "Full score"),
@@ -655,7 +934,6 @@ def split_file_to_new_score(
         "id": new_score_id,
         **meta_fields,
         "owner_id": owner_id,
-        "assigned_user_ids": [],
         "files": [new_file],
         "created_at": utc_now_iso(),
     }
@@ -672,7 +950,8 @@ def delete_score(score_id: str) -> None:
     if path.exists():
         shutil.rmtree(path)
     for lib_file in LIBRARIES_DIR.glob("*.json"):
-        lib = _read_json(lib_file, default_library())
+        library_id = lib_file.stem
+        lib = _read_json(lib_file, default_library(library_id))
         changed = False
         if score_id in lib.get("score_folders", {}):
             lib["score_folders"].pop(score_id, None)
@@ -682,6 +961,42 @@ def delete_score(score_id: str) -> None:
             changed = True
         if changed:
             _write_json(lib_file, lib)
+
+
+def transfer_score_to_system(score_id: str) -> None:
+    meta = load_score_meta(score_id)
+    if not meta:
+        return
+    meta["owner_id"] = SYSTEM_OWNER_ID
+    save_score_meta(score_id, meta)
+    if not library_has_score(GLOBAL_LIBRARY_ID, score_id):
+        assign_score_to_folder(GLOBAL_LIBRARY_ID, score_id, ROOT_FOLDER_ID)
+
+
+def delete_user(user_id: str) -> None:
+    if not get_user(user_id):
+        raise ValueError("User not found")
+    if SCORES_DIR.exists():
+        for sdir in SCORES_DIR.iterdir():
+            if not sdir.is_dir():
+                continue
+            meta = load_score_meta(sdir.name)
+            if meta and meta.get("owner_id") == user_id:
+                transfer_score_to_system(meta["id"])
+    users = [u for u in load_users() if u["id"] != user_id]
+    save_users(users)
+    lib_path = library_path(user_id)
+    if lib_path.exists():
+        lib_path.unlink()
+    for lib_file in LIBRARIES_DIR.glob("*.json"):
+        library_id = lib_file.stem
+        lib = _read_json(lib_file, default_library(library_id))
+        aliases = lib.get("file_aliases", {})
+        if user_id not in aliases:
+            continue
+        del aliases[user_id]
+        lib["file_aliases"] = aliases
+        _write_json(lib_file, lib)
 
 
 def score_matches_filter(meta: dict, query: str, tag: str | None) -> bool:
@@ -765,11 +1080,8 @@ def user_can_view_score(user: dict, meta: dict, library_id: str | None = None) -
         return True
     if meta.get("owner_id") == user["id"]:
         return True
-    if user["id"] in meta.get("assigned_user_ids", []):
-        return True
-    if library_id:
-        lib = load_library(library_id)
-        if sid := meta.get("id"):
-            if sid in lib.get("score_order", []):
-                return True
-    return False
+    sid = meta.get("id")
+    if not sid:
+        return False
+    lib_id = library_id or user["id"]
+    return library_has_score(lib_id, sid)

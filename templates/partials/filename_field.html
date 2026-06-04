@@ -1,0 +1,14 @@
+{% set ext = file_extension(stored_name|default('')) %}
+<div class="form-group" data-filename-field data-file-id="{{ file_id }}" data-filename-stem="{{ name }}"{% if ext %} data-filename-ext="{{ ext }}"{% endif %}>
+  <label>Filename</label>
+  <div class="filename-field">
+    <span class="filename-field-value" data-filename-display data-file-id="{{ file_id }}">{{ name }}{% if ext %}.{{ ext }}{% endif %}</span>
+    {% if can_edit|default(false) %}
+    <button type="button" class="btn-icon btn-icon-sm filename-field-edit" title="Edit filename" aria-label="Edit filename">✎</button>
+    <div class="filename-field-edit-row">
+      <input class="form-control filename-field-input" type="text" data-filename-input value="{{ name }}">
+      {% if ext %}<span class="filename-field-ext">.{{ ext }}</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>

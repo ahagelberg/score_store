@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% block title %}Share — {{ app_title }}{% endblock %}
 {% block body %}
 <header class="site-header">
   <h1>Share scores</h1>
@@ -53,7 +52,7 @@
                 {% for u in users %}
                 <label class="share-user-row">
                   <input type="checkbox" class="assign-checkbox" data-user-id="{{ u.id }}" data-score-id="{{ score.id }}"
-                    {% if u.id in score.assigned_user_ids %}checked{% endif %}>
+                    {% if score.id in user_library_scores.get(u.id, []) %}checked{% endif %}>
                   {{ u.display_name }}
                 </label>
                 {% endfor %}

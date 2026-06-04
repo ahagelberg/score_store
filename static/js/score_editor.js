@@ -2,8 +2,10 @@
   "use strict";
 
   const DRAG_MIME = "application/x-score-file";
-  const ACCORDION_MODE_VIEW = "view";
   const ACCORDION_MODE_EDIT = "edit";
+  const ICON_DOWNLOAD = `<svg class="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`;
+  const ICON_PRINT = `<svg class="icon-print" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>`;
+  const ICON_PAPERCLIP = `<svg class="icon-paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
 
   function setAccordionExpanded(item, expanded) {
     item.classList.toggle("score-accordion-expanded", expanded);
@@ -14,7 +16,6 @@
 
   function setAccordionMode(item, mode) {
     item.dataset.accordionMode = mode || "";
-    item.classList.toggle("score-accordion-view", mode === ACCORDION_MODE_VIEW);
     item.classList.toggle("score-accordion-edit", mode === ACCORDION_MODE_EDIT);
   }
 
@@ -29,11 +30,7 @@
   }
 
   function closeAccordion(item) {
-    if (item.dataset.mode === "create" || item.dataset.mode === "split") {
-      item.remove();
-    } else {
-      collapseAccordion(item);
-    }
+    collapseAccordion(item);
   }
 
   function collapseAllExcept(except) {
@@ -42,11 +39,10 @@
     });
   }
 
-  function expandViewAccordion(item) {
-    collapseAllExcept(item);
-    setAccordionExpanded(item, true);
-    setAccordionMode(item, ACCORDION_MODE_VIEW);
-    ensureAuxSectionVisible(item);
+  function syncTagsOnExpand(item) {
+    const tags = tagsForItem(item);
+    syncSummaryTags(item, tags);
+    syncItemTagField(item, tags);
   }
 
   function expandEditAccordion(item) {
@@ -54,19 +50,39 @@
     setAccordionExpanded(item, true);
     setAccordionMode(item, ACCORDION_MODE_EDIT);
     ensureAuxSectionVisible(item);
-    if (window.TagInput) window.TagInput.initAll(item);
+    syncTagsOnExpand(item);
+  }
+
+  function expandEditAccordionKeepOthers(item) {
+    setAccordionExpanded(item, true);
+    setAccordionMode(item, ACCORDION_MODE_EDIT);
+    ensureAuxSectionVisible(item);
+    syncTagsOnExpand(item);
   }
 
   function expandAccordion(item) {
     expandEditAccordion(item);
   }
 
-  function toggleViewAccordion(item) {
-    if (item.dataset.accordionMode === ACCORDION_MODE_VIEW) {
-      collapseAccordion(item);
-    } else {
-      expandViewAccordion(item);
-    }
+  function hasAuxFiles(item) {
+    const auxList = item.querySelector("[data-aux-list]");
+    return auxList && auxList.children.length > 0;
+  }
+
+  function syncAuxIndicator(item) {
+    const indicator = item.querySelector("[data-score-aux-indicator]");
+    if (indicator) indicator.classList.toggle("score-aux-icon-empty", !hasAuxFiles(item));
+  }
+
+  function openScoreViewer(item) {
+    const viewBtn = item.querySelector(".score-view-btn");
+    if (!viewBtn || !window.ScoreViewer) return;
+    window.ScoreViewer.openFromButton(viewBtn);
+  }
+
+  function auxIndicatorHtml(hasAux) {
+    const emptyClass = hasAux ? "" : " score-aux-icon-empty";
+    return `<span class="score-aux-icon${emptyClass}" data-score-aux-indicator aria-hidden="true" title="Additional files">${ICON_PAPERCLIP}</span>`;
   }
 
   function toggleEditAccordion(item) {
@@ -97,6 +113,37 @@
     ].filter(Boolean).join(" ");
   }
 
+  function syncSummaryTags(item, tags) {
+    const tagsEl = item.querySelector(".score-summary-tags");
+    if (tagsEl) {
+      tagsEl.replaceChildren();
+      tags.forEach((t) => {
+        const chip = document.createElement("span");
+        chip.className = "tag-chip";
+        chip.textContent = t;
+        tagsEl.appendChild(chip);
+      });
+    }
+    item.dataset.filterTags = tags.join(",");
+  }
+
+  function syncItemTagField(item, tags) {
+    const field = item.querySelector("[data-tag-field]");
+    if (!field || !window.TagInput) return;
+    window.TagInput.initField(field);
+    window.TagInput.setFieldTags(field, tags);
+  }
+
+  function tagsForItem(item) {
+    const field = item.querySelector("[data-tag-field]");
+    const hiddenEl = field?.querySelector('input[name="tags"]');
+    const fromHidden = window.TagInput ? window.TagInput.parseTags(hiddenEl?.value) : [];
+    const fromDataset = (item.dataset.filterTags || "").split(",").filter(Boolean);
+    if (fromHidden.length || !fromDataset.length) return fromHidden;
+    if (hiddenEl) hiddenEl.value = JSON.stringify(fromDataset);
+    return fromDataset;
+  }
+
   function updateSummary(item, score) {
     const titleEl = item.querySelector(".score-summary-title");
     if (titleEl) titleEl.textContent = score.title || "New score";
@@ -115,62 +162,171 @@
         composerEl.remove();
       }
     }
-    const tagsEl = item.querySelector(".score-summary-tags");
-    if (tagsEl) {
-      tagsEl.replaceChildren();
-      (score.tags || []).forEach((t) => {
-        const chip = document.createElement("span");
-        chip.className = "tag-chip";
-        chip.textContent = t;
-        tagsEl.appendChild(chip);
-      });
-    }
-    item.dataset.filterTags = (score.tags || []).join(",");
+    const tags = score.tags || [];
+    syncSummaryTags(item, tags);
+    syncItemTagField(item, tags);
     item.dataset.filterText = summaryFilterText(score);
   }
 
-  function buildCreateAccordion(stagedFile, libraryCtx, folderId, splitContext) {
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function mainFileFromScore(score) {
+    return (score.files || []).find((f) => f.role === "main") || null;
+  }
+
+  function auxFilesFromScore(score) {
+    return (score.files || []).filter((f) => f.role !== "main");
+  }
+
+  function auxTypeLabel(file) {
+    if (file.type_label) return file.type_label;
+    if (file.media === "youtube") return "YouTube";
+    const stored = file.stored_name || "";
+    const extMatch = stored.match(/\.([^.]+)$/);
+    const ext = extMatch ? extMatch[1].toLowerCase() : "";
+    if (ext === "mscz" || ext === "mscx") return "MuseScore";
+    if (ext === "musicxml" || ext === "xml") return "MusicXML";
+    if (ext) return ext.toUpperCase();
+    const mediaLabels = { pdf: "PDF", image: "Image", audio: "Audio", video: "Video", musescore: "MuseScore" };
+    return mediaLabels[file.media] || "File";
+  }
+
+  function fileExtension(storedName) {
+    if (!storedName) return "";
+    const dot = storedName.lastIndexOf(".");
+    if (dot <= 0) return "";
+    return storedName.slice(dot + 1).toLowerCase();
+  }
+
+  function fileDisplayName(stem, ext) {
+    return ext ? `${stem}.${ext}` : stem;
+  }
+
+  function buildAuxFileNameHtml(fileId, name, storedName, youtubeUrl) {
+    const ext = fileExtension(storedName || "");
+    const extAttr = ext ? ` data-filename-ext="${escapeHtml(ext)}"` : "";
+    const extHtml = ext ? `<span class="filename-field-ext">.${escapeHtml(ext)}</span>` : "";
+    const display = youtubeUrl ? escapeHtml(name) : escapeHtml(fileDisplayName(name, ext));
+    const displayEl = youtubeUrl
+      ? `<a class="aux-file-name aux-file-link filename-field-value" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener noreferrer" data-filename-display data-file-id="${escapeHtml(fileId)}">${display}</a>`
+      : `<span class="aux-file-name filename-field-value" data-filename-display data-file-id="${escapeHtml(fileId)}">${display}</span>`;
+    return `<div class="aux-file-name-field filename-field" data-filename-field data-file-id="${escapeHtml(fileId)}" data-filename-stem="${escapeHtml(name)}"${extAttr}>
+      ${displayEl}
+      <button type="button" class="btn-icon btn-icon-sm filename-field-edit" title="Edit filename" aria-label="Edit filename">✎</button>
+      <div class="filename-field-edit-row">
+        <input class="form-control filename-field-input" type="text" data-filename-input value="${escapeHtml(name)}">
+        ${extHtml}
+      </div>
+    </div>`;
+  }
+
+  function buildFilenameFieldHtml(fileId, name, storedName) {
+    const ext = fileExtension(storedName || "");
+    const extAttr = ext ? ` data-filename-ext="${escapeHtml(ext)}"` : "";
+    const extHtml = ext ? `<span class="filename-field-ext">.${escapeHtml(ext)}</span>` : "";
+    const display = fileDisplayName(name, ext);
+    return `<div class="form-group" data-filename-field data-file-id="${escapeHtml(fileId)}" data-filename-stem="${escapeHtml(name)}"${extAttr}>
+      <label>Filename</label>
+      <div class="filename-field">
+        <span class="filename-field-value" data-filename-display data-file-id="${escapeHtml(fileId)}">${escapeHtml(display)}</span>
+        <button type="button" class="btn-icon btn-icon-sm filename-field-edit" title="Edit filename" aria-label="Edit filename">✎</button>
+        <div class="filename-field-edit-row">
+          <input class="form-control filename-field-input" type="text" data-filename-input value="${escapeHtml(name)}">
+          ${extHtml}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function buildAuxFileHtml(file) {
+    return `<li class="aux-file-item" draggable="true" data-file-id="${escapeHtml(file.id)}" data-drag-kind="aux">
+      <span class="aux-file-icon" aria-hidden="true">📄</span>
+      <span class="aux-file-type">${escapeHtml(auxTypeLabel(file))}</span>
+      ${buildAuxFileNameHtml(file.id, file.name, file.stored_name, file.media === "youtube" ? file.url : null)}
+      <button type="button" class="aux-file-remove" data-remove-file="${escapeHtml(file.id)}" title="Remove">×</button>
+    </li>`;
+  }
+
+  function buildScoreAccordion(score, libraryCtx, folderId, options) {
+    const opts = options || {};
+    const expanded = opts.expanded !== false;
+    const draggable = opts.draggable === true;
+    const mainFile = mainFileFromScore(score);
+    const auxFiles = auxFilesFromScore(score);
+    const tagsJson = JSON.stringify(score.tags || []);
+    const filterText = summaryFilterText(score);
+    const filterTags = (score.tags || []).join(",");
+    const composerHtml = score.composer
+      ? `<span class="score-summary-composer">${escapeHtml(score.composer)}</span>`
+      : "";
+    const noMainBadge = mainFile ? "" : `<span class="score-badge-warn">No main PDF</span>`;
+    const tagChips = (score.tags || []).map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("");
+    const summaryActionsHtml = mainFile
+      ? `<button type="button" class="btn-icon btn-icon-sm score-view-btn" data-score-id="${escapeHtml(score.id)}" title="View" aria-label="View">👁</button>
+         <a class="btn-icon btn-icon-sm viewer-header-btn score-download-btn" href="/scores/${escapeHtml(score.id)}/download" title="Download" aria-label="Download">${ICON_DOWNLOAD}</a>
+         <button type="button" class="btn-icon btn-icon-sm score-print-btn" data-print-url="/files/${escapeHtml(score.id)}/${escapeHtml(mainFile.stored_name)}" data-print-media="pdf" title="Print" aria-label="Print">${ICON_PRINT}</button>`
+      : "";
     const li = document.createElement("li");
-    li.className = "score-accordion score-accordion-expanded";
-    li.dataset.mode = splitContext ? "split" : "create";
+    li.className = `score-accordion drop-target${expanded ? " score-accordion-expanded score-accordion-edit" : " score-accordion-collapsed"}`;
+    li.dataset.dropKind = "score";
+    li.dataset.scoreId = score.id;
+    li.dataset.scoreFolderId = folderId;
+    li.dataset.filterText = filterText;
+    li.dataset.filterTags = filterTags;
+    li.dataset.mode = "edit";
     li.dataset.libraryCtx = libraryCtx;
     li.dataset.folderId = folderId;
     li.dataset.canEdit = "true";
-    if (splitContext) {
-      li.dataset.splitSrc = splitContext.srcScoreId;
-      li.dataset.splitFileId = splitContext.fileId;
+    if (draggable) {
+      li.dataset.dragScore = "true";
     }
-    const title = UploadHelpers.basename(stagedFile ? stagedFile.name : "New score");
+    const summaryDragAttr = draggable ? ' draggable="true"' : "";
     li.innerHTML = `
-      <div class="score-summary" data-score-summary>
-        <span class="score-summary-title">${title}</span>
-      </div>
-      <div class="score-editor" data-score-editor>
-        <div class="score-panel-main">
-          <span class="score-panel-main-icon">📄</span>
-          <div class="score-panel-main-info">
-            <div class="score-panel-main-name">${stagedFile ? stagedFile.name : ""}</div>
-            <div class="score-panel-main-sub">${stagedFile ? stagedFile.name : ""}</div>
+      <div class="score-summary score-summary-clickable" data-score-summary${summaryDragAttr}>
+        <div class="score-summary-main">
+          ${auxIndicatorHtml(auxFiles.length > 0)}
+          <div class="score-summary-text">
+            <span class="score-summary-title">${escapeHtml(score.title || "New score")}</span>
+            ${composerHtml}
+          </div>
+          ${noMainBadge}
+        </div>
+        <div class="score-summary-end">
+          <div class="score-summary-tags">${tagChips}</div>
+          <div class="score-summary-actions">
+            ${summaryActionsHtml}
+            <button type="button" class="btn-icon btn-icon-sm score-edit-btn" data-action="expand" title="Edit" aria-label="Edit">✎</button>
+            <button type="button" class="btn-icon btn-icon-sm btn-icon-danger score-delete-btn" data-score-id="${escapeHtml(score.id)}" title="Delete" aria-label="Delete">×</button>
           </div>
         </div>
+      </div>
+      <div class="score-editor${expanded ? "" : " hidden"}" data-score-editor>
         <div class="score-section" data-section="details">
           <div class="score-section-header" data-section-toggle><span>Details</span><span>−</span></div>
           <div class="score-section-body">
-            <div class="form-group"><label>Title *</label><input class="form-control" data-field="title" value="${title}"></div>
-            <div class="form-group"><label>Composer</label><input class="form-control" data-field="composer"></div>
-            <div class="form-group"><label>Arranger</label><input class="form-control" data-field="arranger"></div>
-            <div class="form-group"><label>Description</label><textarea class="form-control" data-field="description"></textarea></div>
+            <div class="form-group"><label>Title *</label><input class="form-control" type="text" data-field="title" value="${escapeHtml(score.title || "")}" required></div>
+            <div class="form-group"><label>Composer</label><input class="form-control" type="text" data-field="composer" value="${escapeHtml(score.composer || "")}"></div>
+            <div class="form-group"><label>Arranger</label><input class="form-control" type="text" data-field="arranger" value="${escapeHtml(score.arranger || "")}"></div>
+            <div class="form-group"><label>Description</label><textarea class="form-control" data-field="description">${escapeHtml(score.description || "")}</textarea></div>
             <div class="form-group"><label>Tags</label>
-              <div class="tag-field" data-tag-field><input type="hidden" name="tags" value="[]"><div class="tag-chip-list" data-tag-list></div><input class="tag-field-input" data-tag-input placeholder="Add tag…"></div>
+              <div class="tag-field" data-tag-field><input type="hidden" name="tags" value="${escapeHtml(tagsJson)}"><div class="tag-chip-list" data-tag-list></div><input class="tag-field-input" data-tag-input placeholder="Add tag…"></div>
             </div>
+            ${mainFile ? buildFilenameFieldHtml(mainFile.id, mainFile.name, mainFile.stored_name) : ""}
           </div>
         </div>
         <div class="score-section" data-section="aux">
           <div class="score-section-header" data-section-toggle><span>Additional files</span><span>−</span></div>
           <div class="score-section-body">
+            <button type="button" class="btn btn-sm add-youtube-btn">+ YouTube</button>
             <div class="aux-files">
-              <ul class="aux-file-list" data-aux-list></ul>
-              <div class="aux-drop-zone drop-target aux-drop-zone-active" data-drop-kind="aux" data-score-id="">
+              <ul class="aux-file-list" data-aux-list>${auxFiles.map(buildAuxFileHtml).join("")}</ul>
+              <div class="aux-drop-zone drop-target aux-drop-zone-active" data-drop-kind="aux" data-score-id="${escapeHtml(score.id)}">
                 <p class="aux-drop-hint">Drop files here to add</p>
               </div>
             </div>
@@ -181,52 +337,79 @@
           <button type="button" class="btn btn-primary score-save-btn">Save</button>
         </div>
       </div>`;
-    if (stagedFile) li._stagedFile = stagedFile;
     return li;
+  }
+
+  async function createScoreFromUpload(file, libraryCtx, folderId) {
+    const title = UploadHelpers.basename(file.name);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("folder_id", folderId);
+    fd.append("title", title);
+    fd.append("composer", "");
+    fd.append("arranger", "");
+    fd.append("description", "");
+    fd.append("tags", "[]");
+    const res = await fetch(`/library/${libraryCtx}/scores/new`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Upload failed");
+    return data.score;
+  }
+
+  async function splitToNewScore(srcScoreId, fileId, libraryCtx, folderId, title) {
+    const res = await fetch(`/scores/${srcScoreId}/files/${fileId}/split`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: title || "New score",
+        composer: "",
+        arranger: "",
+        description: "",
+        tags: "[]",
+        library_ctx: libraryCtx,
+        folder_id: folderId,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Split failed");
+    return data;
+  }
+
+  function replaceAccordionFromScore(item, score, libraryCtx, folderId) {
+    const expanded = item.classList.contains("score-accordion-expanded");
+    const accordionMode = item.dataset.accordionMode || null;
+    const draggable = item.dataset.dragScore === "true";
+    const parent = item.parentNode;
+    const newItem = buildScoreAccordion(score, libraryCtx, folderId, { expanded, draggable });
+    if (accordionMode) setAccordionMode(newItem, accordionMode);
+    parent.replaceChild(newItem, item);
+    bindAccordion(newItem);
+    if (window.TagInput) window.TagInput.initAll(newItem);
+    window.LibraryDrop?.bindDropTargets?.(newItem);
+    return newItem;
+  }
+
+  function insertScoreAccordion(list, score, libraryCtx, folderId, options) {
+    const opts = options || {};
+    const draggable = opts.draggable ?? list.querySelector(".score-accordion[data-drag-score]") !== null;
+    const item = buildScoreAccordion(score, libraryCtx, folderId, { expanded: true, draggable });
+    list.insertBefore(item, list.firstChild);
+    bindAccordion(item);
+    if (window.TagInput) window.TagInput.initAll(item);
+    window.LibraryDrop?.bindDropTargets?.(item);
+    if (opts.expandMode === "keep") expandEditAccordionKeepOthers(item);
+    else expandEditAccordion(item);
+    window.ScoreFilter?.reapplyAll?.();
+    return item;
   }
 
   async function saveAccordion(item) {
     const meta = collectMetadata(item);
-    const mode = item.dataset.mode || "edit";
-    const libraryCtx = item.dataset.libraryCtx;
-    const folderId = item.dataset.folderId || "root";
-
-    if (mode === "create") {
-      const file = item._stagedFile;
-      if (!file) {
-        showToast("PDF file missing", true);
-        return;
-      }
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("folder_id", folderId);
-      Object.entries(meta).forEach(([k, v]) => fd.append(k, v));
-      const res = await fetch(`/library/${libraryCtx}/scores/new`, { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data.error || "Save failed", true);
-        return;
-      }
-      location.reload();
-      return;
-    }
-
-    if (mode === "split") {
-      const res = await fetch(`/scores/${item.dataset.splitSrc}/files/${item.dataset.splitFileId}/split`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...meta, library_ctx: libraryCtx, folder_id: folderId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data.error || "Split failed", true);
-        return;
-      }
-      location.reload();
-      return;
-    }
-
     const scoreId = item.dataset.scoreId;
+    if (!scoreId) {
+      showToast("Score not found", true);
+      return;
+    }
     const res = await fetch(`/scores/${scoreId}/edit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -242,6 +425,107 @@
     collapseAccordion(item);
   }
 
+  function syncFilenameField(field, stem, ext) {
+    const display = field.querySelector("[data-filename-display]");
+    const input = field.querySelector("[data-filename-input]");
+    const resolvedExt = ext || field.dataset.filenameExt || "";
+    const displayText = fileDisplayName(stem, resolvedExt);
+    if (display) display.textContent = displayText;
+    if (input) input.value = stem;
+    field.dataset.filenameStem = stem;
+    if (resolvedExt) field.dataset.filenameExt = resolvedExt;
+  }
+
+  function syncFilenameDisplay(accordion, fileId, file) {
+    const stem = file.name;
+    const ext = fileExtension(file.stored_name || "");
+    accordion.querySelectorAll(`[data-filename-field][data-file-id="${fileId}"]`).forEach((field) => {
+      syncFilenameField(field, stem, ext);
+    });
+  }
+
+  async function saveFilenameField(field, scoreId) {
+    const input = field.querySelector("[data-filename-input]");
+    if (!input) return null;
+    const fileId = field.dataset.fileId;
+    const stem = input.value.trim();
+    if (!stem) return null;
+    if (stem === field.dataset.filenameStem) return;
+    const res = await fetch(`/scores/${scoreId}/files/${fileId}/name`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: stem }),
+    });
+    if (!res.ok) {
+      showToast("Name update failed", true);
+      return null;
+    }
+    const data = await res.json();
+    return data.file;
+  }
+
+  function bindFilenameField(field, scoreId, accordion) {
+    const input = field.querySelector("[data-filename-input]");
+    const editBtn = field.querySelector(".filename-field-edit");
+    if (!input || !editBtn) return;
+
+    function enterEdit() {
+      field.classList.add("filename-field-editing");
+      input.value = field.dataset.filenameStem || input.value;
+      input.focus();
+      input.select();
+    }
+
+    function exitEdit() {
+      field.classList.remove("filename-field-editing");
+    }
+
+    function revertInput() {
+      input.value = field.dataset.filenameStem || input.value;
+    }
+
+    editBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      enterEdit();
+    });
+
+    input.addEventListener("mousedown", (e) => e.stopPropagation());
+    input.addEventListener("keydown", async (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        revertInput();
+        exitEdit();
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const savedFile = await saveFilenameField(field, scoreId);
+        if (savedFile) syncFilenameDisplay(accordion, field.dataset.fileId, savedFile);
+        else if (savedFile === null) revertInput();
+        exitEdit();
+      }
+    });
+
+    input.addEventListener("blur", async () => {
+      if (!field.classList.contains("filename-field-editing")) return;
+      const savedFile = await saveFilenameField(field, scoreId);
+      if (savedFile) syncFilenameDisplay(accordion, field.dataset.fileId, savedFile);
+      else if (savedFile === null) revertInput();
+      exitEdit();
+    });
+  }
+
+  function bindFilenameFields(accordion) {
+    const scoreId = accordion.dataset.scoreId;
+    if (!scoreId) return;
+    accordion.querySelectorAll("[data-filename-field]").forEach((field) => {
+      if (field.dataset.filenameBound) return;
+      field.dataset.filenameBound = "true";
+      bindFilenameField(field, scoreId, accordion);
+    });
+  }
+
   async function removeAux(scoreId, fileId, row) {
     const res = await fetch(`/scores/${scoreId}/files/${fileId}/remove`, { method: "POST" });
     const data = await res.json();
@@ -250,6 +534,8 @@
       return;
     }
     row.remove();
+    const accordion = row.closest(".score-accordion");
+    if (accordion) syncAuxIndicator(accordion);
   }
 
   function bindAuxFileItem(item, scoreId) {
@@ -260,6 +546,9 @@
         removeAux(scoreId, removeBtn.dataset.removeFile, item);
       });
     }
+    item.querySelectorAll(".aux-file-link").forEach((link) => {
+      link.addEventListener("mousedown", (e) => e.stopPropagation());
+    });
     if (item.draggable) {
       item.addEventListener("dragstart", (e) => {
         e.dataTransfer.setData(DRAG_MIME, JSON.stringify({
@@ -286,33 +575,16 @@
   }
 
   function appendAuxFile(listEl, file, scoreId) {
-    const item = document.createElement("li");
-    item.className = "aux-file-item";
-    item.draggable = true;
-    item.dataset.fileId = file.id;
-    item.dataset.dragKind = "aux";
-    item.dataset.scoreId = scoreId;
-    const icon = document.createElement("span");
-    icon.className = "aux-file-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = "📄";
-    item.appendChild(icon);
-    const type = document.createElement("span");
-    type.className = "aux-file-type";
-    type.textContent = file.type_label || "File";
-    item.appendChild(type);
-    const name = document.createElement("span");
-    name.className = "aux-file-name";
-    name.textContent = file.name;
-    item.appendChild(name);
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "aux-file-remove";
-    btn.dataset.removeFile = file.id;
-    btn.textContent = "×";
-    item.appendChild(btn);
+    const wrapper = document.createElement("ul");
+    wrapper.innerHTML = buildAuxFileHtml(file);
+    const item = wrapper.firstElementChild;
     listEl.appendChild(item);
     bindAuxFileItem(item, scoreId);
+    const accordion = listEl.closest(".score-accordion");
+    if (accordion) {
+      bindFilenameFields(accordion);
+      syncAuxIndicator(accordion);
+    }
   }
 
   async function addYoutube(scoreId, listEl) {
@@ -331,15 +603,48 @@
     appendAuxFile(listEl, data.file, scoreId);
   }
 
+  function summaryOpensViewer(item) {
+    const workspace = item.closest(".library-workspace");
+    return workspace?.dataset.summaryOpensViewer === "true";
+  }
+
+  function openSummaryAction(item) {
+    if (item.dataset.canEdit === "true" && !summaryOpensViewer(item)) {
+      toggleEditAccordion(item);
+    } else {
+      openScoreViewer(item);
+    }
+  }
+
+  const SCORE_DRAG_BLOCK_SELECTOR = ".score-summary-actions, button, a";
+
+  function bindScoreDrag(item) {
+    if (!item.dataset.dragScore) return;
+    const summaryEl = item.querySelector("[data-score-summary]");
+    if (!summaryEl) return;
+    summaryEl.draggable = true;
+    summaryEl.addEventListener("dragstart", (e) => {
+      if (e.target.closest(SCORE_DRAG_BLOCK_SELECTOR)) {
+        e.preventDefault();
+        return;
+      }
+      if (!item.dataset.scoreId) return;
+      e.dataTransfer.setData("application/x-score-id", item.dataset.scoreId);
+      item.classList.add("score-dragging");
+    });
+    summaryEl.addEventListener("dragend", () => item.classList.remove("score-dragging"));
+  }
+
   function bindAccordion(item) {
-    const titleEl = item.querySelector(".score-summary-title");
+    const summaryEl = item.querySelector("[data-score-summary]");
     const editBtn = item.querySelector(".score-edit-btn");
     const isExistingScore = item.dataset.mode === "edit" && item.dataset.scoreId;
-    if (titleEl && isExistingScore) {
-      titleEl.classList.add("score-summary-title-toggle");
-      titleEl.addEventListener("click", (e) => {
-        e.stopPropagation();
-        toggleViewAccordion(item);
+    if (summaryEl && isExistingScore) {
+      summaryEl.classList.add("score-summary-clickable");
+      syncAuxIndicator(item);
+      summaryEl.addEventListener("click", (e) => {
+        if (e.target.closest(".score-summary-actions, button, a")) return;
+        openSummaryAction(item);
       });
     }
     if (editBtn) {
@@ -369,17 +674,7 @@
       bindAuxFileItem(auxItem, item.dataset.scoreId);
     });
 
-    const mainNameInput = item.querySelector("[data-main-name-input]");
-    if (mainNameInput) {
-      mainNameInput.addEventListener("change", async () => {
-        const res = await fetch(`/scores/${item.dataset.scoreId}/files/${mainNameInput.dataset.fileId}/name`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: mainNameInput.value }),
-        });
-        if (!res.ok) showToast("Name update failed", true);
-      });
-    }
+    bindFilenameFields(item);
 
     const ytBtn = item.querySelector(".add-youtube-btn");
     const auxList = item.querySelector("[data-aux-list]");
@@ -387,22 +682,8 @@
       ytBtn.addEventListener("click", () => addYoutube(item.dataset.scoreId, auxList));
     }
 
-    const mainPanel = item.querySelector("[data-drag-kind='main']");
-    if (mainPanel) {
-      mainPanel.addEventListener("dragstart", (e) => {
-        e.dataTransfer.setData(DRAG_MIME, JSON.stringify({
-          scoreId: item.dataset.scoreId,
-          fileId: mainPanel.dataset.fileId,
-          dragKind: "main",
-        }));
-      });
-    }
-
     if (item.dataset.dragScore) {
-      item.addEventListener("dragstart", (e) => {
-        if (!item.dataset.scoreId) return;
-        e.dataTransfer.setData("application/x-score-id", item.dataset.scoreId);
-      });
+      bindScoreDrag(item);
     }
 
     const deleteBtn = item.querySelector(".score-delete-btn");
@@ -417,7 +698,20 @@
     }
   }
 
+  function bindEscapeToCloseEdit() {
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const overlay = document.getElementById("score-viewer-overlay");
+      if (overlay && !overlay.classList.contains("hidden")) return;
+      if (e.target.closest(".filename-field-editing")) return;
+      const item = document.querySelector(".score-accordion-expanded.score-accordion-edit");
+      if (!item) return;
+      closeAccordion(item);
+    });
+  }
+
   function initExisting() {
+    bindEscapeToCloseEdit();
     document.querySelectorAll(".score-accordion").forEach(bindAccordion);
     if (window.TagInput) window.TagInput.initAll(document);
   }
@@ -426,11 +720,15 @@
     initExisting,
     expandAccordion,
     expandEditAccordion,
-    expandViewAccordion,
-    buildCreateAccordion,
+    expandEditAccordionKeepOthers,
+    buildScoreAccordion,
     bindAccordion,
     addAuxFile,
     appendAuxFile,
+    createScoreFromUpload,
+    splitToNewScore,
+    insertScoreAccordion,
+    replaceAccordionFromScore,
     DRAG_MIME,
   };
 

@@ -17,7 +17,6 @@ from flask import (
     url_for,
 )
 from itsdangerous import BadSignature, URLSafeSerializer
-from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.exceptions import HTTPException
 
 import store
@@ -25,6 +24,7 @@ import store
 APP_TITLE = "Score Store"
 UPLOAD_SCORE_LABEL = "Upload score"
 SCORE_LIST_TITLE = "Scores"
+VIEWER_MAIN_FILE_LABEL = "Score"
 SESSION_USER_KEY = "user_id"
 CTX_TOKEN_SALT = "score-nav-ctx"
 SWIPE_THRESHOLD_PX = 50
@@ -72,6 +72,10 @@ def role_required(*roles):
     return decorator
 
 
+def password_secret() -> str:
+    return app.secret_key
+
+
 def bootstrap_maestro() -> None:
     username = os.environ.get("BOOTSTRAP_MAESTRO_USER")
     password = os.environ.get("BOOTSTRAP_MAESTRO_PASSWORD")
@@ -80,13 +84,14 @@ def bootstrap_maestro() -> None:
     users = store.load_users()
     if any(u["role"] == "maestro" for u in users):
         return
-    users.append({
-        "id": store.new_id("u-"),
+    user = {
+        "id": store.user_id_from_display_name("Maestro"),
         "display_name": "Maestro",
         "username": username.strip().lower(),
-        "password_hash": generate_password_hash(password),
-        "role": "maestro",
-    })
+        "role": store.MAESTRO_ROLE,
+    }
+    store.set_user_password(user, password, password_secret())
+    users.append(user)
     store.save_users(users)
     store.load_library(store.GLOBAL_LIBRARY_ID)
 
@@ -200,6 +205,7 @@ def build_library_panel(
     panel_class: str = "",
     show_header_actions: bool | None = None,
     assign_user: str | None = None,
+    summary_opens_viewer: bool = False,
 ) -> dict:
     if show_header_actions is None:
         show_header_actions = can_upload
@@ -224,6 +230,7 @@ def build_library_panel(
         "scores_title": SCORE_LIST_TITLE,
         "score_ids": [s["id"] for s in scores if s.get("id")],
         "assign_user": assign_user,
+        "summary_opens_viewer": summary_opens_viewer,
     }
     panel["view_nav"] = score_view_nav_params_from_panel(panel)
     return panel
@@ -248,6 +255,11 @@ def score_view_url(score_id, library_panel):
 @app.template_global()
 def aux_file_type_label(file_entry):
     return store.aux_file_type_label(file_entry)
+
+
+@app.template_global()
+def file_extension(stored_name):
+    return store.extension_of(stored_name or "")
 
 
 @app.template_global()
@@ -304,7 +316,7 @@ def setup():
             flash("Passwords do not match", "error")
         else:
             try:
-                store.complete_setup(username, password, Path(data_dir), generate_password_hash)
+                store.complete_setup(username, password, Path(data_dir), password_secret())
                 flash("Setup complete. Sign in with your admin account.", "success")
                 return redirect(url_for("login"))
             except ValueError as e:
@@ -319,9 +331,18 @@ def setup():
     )
 
 
+@app.template_filter("user_password_display")
+def user_password_display(user):
+    return store.password_for_display(user)
+
+
 @app.context_processor
 def inject_globals():
-    return {"app_title": APP_TITLE, "current_user": current_user()}
+    user = current_user()
+    browser_title = APP_TITLE
+    if user:
+        browser_title = f"{APP_TITLE} - {user['display_name']}"
+    return {"app_title": APP_TITLE, "browser_title": browser_title, "current_user": user}
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -332,7 +353,8 @@ def login():
         username = request.form.get("username", "")
         password = request.form.get("password", "")
         user = store.get_user_by_username(username)
-        if user and check_password_hash(user["password_hash"], password):
+        secret = password_secret()
+        if user and store.verify_user_password(user, password, secret):
             session[SESSION_USER_KEY] = user["id"]
             nxt = request.args.get("next") or url_for("index")
             return redirect(nxt)
@@ -422,8 +444,10 @@ def maestro():
     )
     user_library_panel = None
     if selected_user and user_lib:
+        selected = store.get_user(selected_user)
+        user_panel_title = user_lib.get("display_name") or (selected["display_name"] if selected else "User library")
         user_library_panel = build_library_panel(
-            panel_title="User library",
+            panel_title=user_panel_title,
             lib=user_lib,
             scores=user_scores,
             all_tags=user_tags,
@@ -436,6 +460,7 @@ def maestro():
             can_manage_folders=True,
             draggable_score=True,
             assign_user=selected_user,
+            summary_opens_viewer=True,
         )
     return render_template(
         "maestro.html",
@@ -464,6 +489,7 @@ def maestro_mobile():
                 all_meta[sid] = m
     tags = store.collect_tags(lib.get("score_order", []))
     scores_list = list(all_meta.values())
+    user_library_scores = {u["id"]: store.user_library_score_ids(u["id"]) for u in users}
     mobile_panel = build_library_panel(
         panel_title="Share scores",
         lib=lib,
@@ -479,6 +505,7 @@ def maestro_mobile():
         "maestro_mobile.html",
         scores=scores_list,
         users=users,
+        user_library_scores=user_library_scores,
         library_panel=mobile_panel,
     )
 
@@ -500,14 +527,15 @@ def maestro_user_new():
         flash("Username taken", "error")
         return redirect(url_for("maestro"))
     users = store.load_users()
-    uid = store.new_id("u-")
-    users.append({
+    uid = store.user_id_from_display_name(display_name)
+    user = {
         "id": uid,
         "display_name": display_name,
         "username": username,
-        "password_hash": generate_password_hash(password),
         "role": role,
-    })
+    }
+    store.set_user_password(user, password, password_secret())
+    users.append(user)
     store.save_users(users)
     store.load_library(uid)
     flash("User created", "success")
@@ -535,13 +563,16 @@ def maestro_user_edit(user_id):
     user["username"] = username
     user["role"] = role
     if password:
-        user["password_hash"] = generate_password_hash(password)
+        store.set_user_password(user, password, password_secret())
+    else:
+        store.finalize_user_role(user, password_secret())
     users = store.load_users()
     for i, u in enumerate(users):
         if u["id"] == user_id:
             users[i] = user
             break
     store.save_users(users)
+    store.load_library(user_id)
     flash("User updated", "success")
     return redirect(url_for("maestro", user=request.args.get("user")))
 
@@ -549,14 +580,28 @@ def maestro_user_edit(user_id):
 @app.post("/maestro/users/<user_id>/delete")
 @role_required("maestro")
 def maestro_user_delete(user_id):
-    users = store.load_users()
+    actor = current_user()
+    if actor["id"] == user_id:
+        flash("Cannot delete your own account", "error")
+        return redirect(url_for("maestro"))
     target = store.get_user(user_id)
     if not target:
         abort(404)
-    users = [u for u in users if u["id"] != user_id]
-    store.save_users(users)
+    if target["role"] == "maestro":
+        maestro_count = sum(1 for u in store.load_users() if u["role"] == "maestro")
+        if maestro_count <= 1:
+            flash("Cannot delete the last maestro", "error")
+            return redirect(url_for("maestro", user=request.args.get("user")))
+    try:
+        store.delete_user(user_id)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("maestro", user=request.args.get("user")))
     flash("User deleted", "success")
-    return redirect(url_for("maestro"))
+    selected = request.args.get("user")
+    if selected == user_id:
+        return redirect(url_for("maestro"))
+    return redirect(url_for("maestro", user=selected))
 
 
 @app.post("/maestro/assign")
@@ -571,21 +616,10 @@ def maestro_assign():
     meta = store.load_score_meta(score_id)
     if not meta:
         return json_error("Score not found", 404)
-    lib = store.load_library(user_id)
     if assign:
-        if score_id not in lib["score_order"]:
-            lib["score_order"].append(score_id)
-        lib["score_folders"].setdefault(score_id, store.ROOT_FOLDER_ID)
-        assigned = set(meta.get("assigned_user_ids", []))
-        assigned.add(user_id)
-        meta["assigned_user_ids"] = list(assigned)
-        store.save_score_meta(score_id, meta)
+        store.assign_score_to_folder(user_id, score_id, store.ROOT_FOLDER_ID)
     else:
         store.remove_score_from_library(user_id, score_id)
-        assigned = [x for x in meta.get("assigned_user_ids", []) if x != user_id]
-        meta["assigned_user_ids"] = assigned
-        store.save_score_meta(score_id, meta)
-    store.save_library(user_id, lib)
     return jsonify({"ok": True})
 
 
@@ -600,7 +634,7 @@ def folder_new(library_ctx):
     if not name:
         return json_error("Name required")
     lib = store.load_library(lib_id)
-    fid = store.new_id("fld-")
+    fid = store.folder_id_from_name(name, lib["folders"])
     lib["folders"].append({"id": fid, "name": name})
     store.save_library(lib_id, lib)
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
@@ -666,7 +700,7 @@ def score_new(library_ctx):
         "tags": request.form.get("tags", "[]"),
     }
     try:
-        meta = store.create_score_from_upload(lib_id, folder_id, upload, metadata, user["id"])
+        meta = store.create_score_from_upload(lib_id, folder_id, upload, metadata, store.score_owner_id(user))
     except ValueError as e:
         return json_error(str(e))
     return jsonify({"ok": True, "score": meta})
@@ -825,10 +859,11 @@ def score_file_split(src_id, file_id):
         "tags": data.get("tags", "[]"),
     }
     try:
-        meta = store.split_file_to_new_score(src_id, file_id, lib_id, folder_id, metadata, user["id"])
+        meta = store.split_file_to_new_score(src_id, file_id, lib_id, folder_id, metadata, store.score_owner_id(user))
     except ValueError as e:
         return json_error(str(e))
-    return jsonify({"ok": True, "score": meta})
+    source = store.load_score_meta(src_id)
+    return jsonify({"ok": True, "score": meta, "source_score": source})
 
 
 @app.post("/scores/<score_id>/delete")
@@ -906,10 +941,13 @@ def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[
     files = []
     for f in meta.get("files", []):
         display = store.file_display_name(meta, f["id"], user["id"], lib_id)
+        if f.get("role") == "main":
+            display = VIEWER_MAIN_FILE_LABEL
         entry = {
             "id": f["id"],
             "display_name": display,
             "media": f.get("media"),
+            "type_label": store.aux_file_type_label(f),
         }
         if f.get("media") == "youtube":
             entry["embed_url"] = store.youtube_embed_url(f.get("url", ""))

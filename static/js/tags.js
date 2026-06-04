@@ -42,11 +42,29 @@
     syncHidden(field);
   }
 
-  function initField(field) {
+  function setFieldTags(field, tags) {
+    const hidden = field.querySelector('input[name="tags"]');
+    const list = field.querySelector("[data-tag-list]");
+    const input = field.querySelector("[data-tag-input]");
+    const normalized = [];
+    for (const raw of tags) {
+      const value = String(raw).trim().toLowerCase();
+      if (value && !normalized.includes(value)) normalized.push(value);
+    }
+    hidden.value = JSON.stringify(normalized);
+    list.replaceChildren();
+    if (input) input.value = "";
+    normalized.forEach((t) => addChip(field, t));
+  }
+
+  function syncFieldFromHidden(field) {
+    const hidden = field.querySelector('input[name="tags"]');
+    setFieldTags(field, parseTags(hidden?.value));
+  }
+
+  function bindFieldEvents(field) {
     if (field.dataset.tagInit) return;
     field.dataset.tagInit = "1";
-    const hidden = field.querySelector('input[name="tags"]');
-    parseTags(hidden.value).forEach((t) => addChip(field, t));
     const input = field.querySelector("[data-tag-input]");
     input.addEventListener("keydown", (e) => {
       if (COMMIT_KEYS.has(e.key)) {
@@ -63,10 +81,15 @@
     });
   }
 
+  function initField(field) {
+    bindFieldEvents(field);
+    syncFieldFromHidden(field);
+  }
+
   function initAll(root) {
     (root || document).querySelectorAll("[data-tag-field]").forEach(initField);
   }
 
-  window.TagInput = { initAll, initField, addChip, syncHidden, parseTags };
+  window.TagInput = { initAll, initField, addChip, setFieldTags, syncFieldFromHidden, syncHidden, parseTags };
   document.addEventListener("DOMContentLoaded", () => initAll(document));
 })();

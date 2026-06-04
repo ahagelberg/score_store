@@ -1,0 +1,15 @@
+{% set ext = file_extension(stored_name|default('')) %}
+<div class="aux-file-name-field filename-field" data-filename-field data-file-id="{{ file_id }}" data-filename-stem="{{ name }}"{% if ext %} data-filename-ext="{{ ext }}"{% endif %}>
+  {% if youtube_url|default('') %}
+  <a class="aux-file-name aux-file-link filename-field-value" href="{{ youtube_url }}" target="_blank" rel="noopener noreferrer" data-filename-display data-file-id="{{ file_id }}">{{ name }}</a>
+  {% else %}
+  <span class="aux-file-name filename-field-value" data-filename-display data-file-id="{{ file_id }}">{{ name }}{% if ext %}.{{ ext }}{% endif %}</span>
+  {% endif %}
+  {% if can_edit|default(false) %}
+  <button type="button" class="btn-icon btn-icon-sm filename-field-edit" title="Edit filename" aria-label="Edit filename">✎</button>
+  <div class="filename-field-edit-row">
+    <input class="form-control filename-field-input" type="text" data-filename-input value="{{ name }}">
+    {% if ext %}<span class="filename-field-ext">.{{ ext }}</span>{% endif %}
+  </div>
+  {% endif %}
+</div>

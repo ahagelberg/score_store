@@ -67,11 +67,52 @@
   }
 
   function insertCreateAccordion(list, file, libraryCtx, folderId, splitCtx) {
-    const item = ScoreEditor.buildCreateAccordion(file, libraryCtx, folderId, splitCtx);
-    list.insertBefore(item, list.firstChild);
-    ScoreEditor.bindAccordion(item);
-    if (window.TagInput) window.TagInput.initAll(item);
-    ScoreEditor.expandAccordion(item);
+    return uploadAndInsertScores(list, [file], libraryCtx, folderId, splitCtx);
+  }
+
+  async function uploadAndInsertScores(list, files, libraryCtx, folderId, splitCtx) {
+    if (splitCtx) {
+      const srcAccordion = document.querySelector(`.score-accordion[data-score-id="${splitCtx.srcScoreId}"]`);
+      const nameField = srcAccordion?.querySelector(
+        `[data-filename-field][data-file-id="${splitCtx.fileId}"]`,
+      );
+      const mainName = nameField?.dataset.filenameStem || "New score";
+      try {
+        const data = await ScoreEditor.splitToNewScore(
+          splitCtx.srcScoreId,
+          splitCtx.fileId,
+          libraryCtx,
+          folderId,
+          mainName.trim() || "New score",
+        );
+        ScoreEditor.insertScoreAccordion(list, data.score, libraryCtx, folderId, { expandMode: "keep" });
+        if (data.source_score && srcAccordion) {
+          ScoreEditor.replaceAccordionFromScore(
+            srcAccordion,
+            data.source_score,
+            srcAccordion.dataset.libraryCtx || libraryCtx,
+            srcAccordion.dataset.folderId || folderId,
+          );
+        }
+      } catch (err) {
+        showToast(err.message || "Split failed", true);
+      }
+      return;
+    }
+    const pdfs = files.filter((f) => UploadHelpers.isPdfFile(f));
+    if (pdfs.length === 0) {
+      showToast("Please choose a PDF file", true);
+      return;
+    }
+    const multi = pdfs.length > 1;
+    for (const file of pdfs) {
+      try {
+        const score = await ScoreEditor.createScoreFromUpload(file, libraryCtx, folderId);
+        ScoreEditor.insertScoreAccordion(list, score, libraryCtx, folderId, { expandMode: multi ? "keep" : "collapse" });
+      } catch (err) {
+        showToast(err.message || "Upload failed", true);
+      }
+    }
   }
 
   function workspaceFrom(el) {
@@ -117,7 +158,7 @@
     if (dragPayload && kind === "folder" && dragPayload.dragKind === "main") {
       const list = scoreListIn(target);
       if (!list) return;
-      insertCreateAccordion(list, null, libraryCtx, folderId, {
+      await uploadAndInsertScores(list, [], libraryCtx, folderId, {
         srcScoreId: dragPayload.scoreId,
         fileId: dragPayload.fileId,
       });
@@ -144,14 +185,14 @@
     if (files.length === 0) return;
 
     if (kind === "folder" || kind === "library") {
-      const pdf = files.find((f) => UploadHelpers.isPdfFile(f));
-      if (!pdf) {
+      const pdfs = files.filter((f) => UploadHelpers.isPdfFile(f));
+      if (pdfs.length === 0) {
         showToast("Drop PDF on folder to create a score; drop other files onto a score", true);
         return;
       }
       const list = target.classList.contains("score-list") ? target : scoreListIn(target);
       if (!list) return;
-      insertCreateAccordion(list, pdf, libraryCtx, folderId, null);
+      await uploadAndInsertScores(list, pdfs, libraryCtx, folderId, null);
       return;
     }
 
@@ -205,17 +246,14 @@
       const input = actions?.querySelector(".upload-pdf-input");
       if (!input) return;
       btn.addEventListener("click", () => input.click());
-      input.addEventListener("change", () => {
-        const file = input.files[0];
+      input.addEventListener("change", async () => {
+        const selected = Array.from(input.files || []);
         input.value = "";
-        if (!file || !UploadHelpers.isPdfFile(file)) {
-          showToast("Please choose a PDF file", true);
-          return;
-        }
         const libraryCtx = btn.dataset.libraryCtx;
         const folderId = btn.dataset.folderId || "root";
         const list = scoreListIn(btn);
-        if (list) insertCreateAccordion(list, file, libraryCtx, folderId, null);
+        if (!list || selected.length === 0) return;
+        await uploadAndInsertScores(list, selected, libraryCtx, folderId, null);
       });
     });
   }
@@ -245,6 +283,8 @@
       });
     });
   }
+
+  window.LibraryDrop = { bindDropTargets };
 
   document.addEventListener("DOMContentLoaded", () => {
     const root = document.getElementById("library-root") || document.getElementById("maestro-root");

@@ -7,6 +7,7 @@
   const PDF_MAX_OUTPUT_SCALE = 2;
   const PDF_PAGE_LOADING_LABEL = "Loading…";
   const PDF_PAGE_SLOT_MIN_HEIGHT_PX = 120;
+  const PDF_RENDER_BUFFER_PAGES = 1;
   const PDF_SCROLL_MODE_VERTICAL = "vertical";
   const PDF_SCROLL_MODE_VERTICAL_PAGES = "vertical-pages";
   const PDF_SCROLL_MODE_HORIZONTAL = "horizontal";
@@ -20,6 +21,16 @@
     [PDF_SCROLL_MODE_VERTICAL]: "Continuous scroll",
     [PDF_SCROLL_MODE_VERTICAL_PAGES]: "Vertical pages",
     [PDF_SCROLL_MODE_HORIZONTAL]: "Horizontal pages",
+  };
+  const VIEWER_FILE_ICON_CLASS = "viewer-file-icon-svg";
+  const VIEWER_FILE_ICONS = {
+    pdf: `<svg class="${VIEWER_FILE_ICON_CLASS}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>`,
+    youtube: `<svg class="${VIEWER_FILE_ICON_CLASS}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M10 9.5v5l5-2.5-5-2.5z"/></svg>`,
+    audio: `<svg class="${VIEWER_FILE_ICON_CLASS}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
+    video: `<svg class="${VIEWER_FILE_ICON_CLASS}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg>`,
+    image: `<svg class="${VIEWER_FILE_ICON_CLASS}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="M21 17l-5-5L5 19"/></svg>`,
+    musescore: `<svg class="${VIEWER_FILE_ICON_CLASS}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
+    file: `<svg class="${VIEWER_FILE_ICON_CLASS}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>`,
   };
 
   let overlay = null;
@@ -40,6 +51,8 @@
   let pdfWorkerReady = false;
   let pdfDocCache = new Map();
   let pdfScrollListeners = new WeakMap();
+  let pdfRenderGeneration = 0;
+  let pdfRelayoutScheduled = false;
   let context = { scoreIds: [], navQuery: {} };
 
   function workspaceFrom(el) {
@@ -77,6 +90,7 @@
   }
 
   function clearPdfCache() {
+    pdfRenderGeneration += 1;
     pdfDocCache.forEach((pdf) => {
       pdf.destroy?.();
     });
@@ -139,6 +153,36 @@
     mount.classList.toggle("viewer-pdf-scroll-vertical", mode === PDF_SCROLL_MODE_VERTICAL);
     mount.classList.toggle("viewer-pdf-scroll-vertical-pages", mode === PDF_SCROLL_MODE_VERTICAL_PAGES);
     mount.classList.toggle("viewer-pdf-scroll-horizontal", mode === PDF_SCROLL_MODE_HORIZONTAL);
+  }
+
+  function mountFitKey(mount, mode) {
+    const fit = mountFitSize(mount, mode);
+    const heightKey = fit.height == null ? "a" : String(Math.round(fit.height));
+    return `${Math.round(fit.width)}:${heightKey}:${mode}`;
+  }
+
+  function orderedPageNums(totalPages, focusPage) {
+    const focus = Math.max(1, Math.min(totalPages, focusPage || 1));
+    const lo = Math.max(1, focus - PDF_RENDER_BUFFER_PAGES);
+    const hi = Math.min(totalPages, focus + PDF_RENDER_BUFFER_PAGES);
+    const order = [];
+    for (let pageNum = lo; pageNum <= hi; pageNum += 1) order.push(pageNum);
+    for (let pageNum = 1; pageNum <= totalPages; pageNum += 1) {
+      if (!order.includes(pageNum)) order.push(pageNum);
+    }
+    return order;
+  }
+
+  async function renderPdfPagesForMount(mount, pdf, slots, fit, mode, totalPages, pageOrder, generation) {
+    for (const pageNum of pageOrder) {
+      if (generation !== pdfRenderGeneration) return;
+      const slot = slots[pageNum - 1];
+      if (!slot) continue;
+      slot.replaceChildren(createPageLoadingLabel());
+      const { page, viewport } = await pageViewportForMode(pdf, pageNum, fit, mode);
+      slot.style.minHeight = `${viewport.height}px`;
+      await renderPdfPageToSlot(slot, page, viewport, pageNum, totalPages);
+    }
   }
 
   function mountFitSize(mount, mode) {
@@ -336,28 +380,35 @@
     updatePdfPageNav(currentPdfPage(mount), total);
   }
 
-  async function setupPdfMount(mount, pdf) {
+  async function setupPdfMount(mount, pdf, options) {
+    const opts = options || {};
     const mode = loadPdfScrollMode();
     applyMountScrollMode(mount);
     const fit = mountFitSize(mount, mode);
     const totalPages = pdf.numPages;
-    const slots = [];
-    mount.replaceChildren();
-    for (let pageNum = 1; pageNum <= totalPages; pageNum += 1) {
-      const slot = createPageSlot(pageNum, PDF_PAGE_SLOT_MIN_HEIGHT_PX);
-      mount.appendChild(slot);
-      slots.push(slot);
+    const focusPage = opts.focusPage || 1;
+    let slots;
+    const existing = mount.querySelectorAll(".viewer-pdf-page-slot");
+    if (opts.reuseSlots && existing.length === totalPages) {
+      slots = Array.from(existing);
+    } else {
+      mount.replaceChildren();
+      slots = [];
+      for (let pageNum = 1; pageNum <= totalPages; pageNum += 1) {
+        const slot = createPageSlot(pageNum, PDF_PAGE_SLOT_MIN_HEIGHT_PX);
+        mount.appendChild(slot);
+        slots.push(slot);
+      }
+      bindPdfPageNav(mount, totalPages);
     }
-    bindPdfPageNav(mount, totalPages);
     setPdfScrollModeBtnVisible(true);
     updatePdfScrollModeUi();
-    await Promise.all(slots.map(async (slot, index) => {
-      const pageNum = index + 1;
-      const { page, viewport } = await pageViewportForMode(pdf, pageNum, fit, mode);
-      slot.style.minHeight = `${viewport.height}px`;
-      await renderPdfPageToSlot(slot, page, viewport, pageNum, totalPages);
-    }));
+    const generation = ++pdfRenderGeneration;
+    const pageOrder = orderedPageNums(totalPages, focusPage);
+    await renderPdfPagesForMount(mount, pdf, slots, fit, mode, totalPages, pageOrder, generation);
+    if (generation !== pdfRenderGeneration) return;
     mount.dataset.rendered = "true";
+    mount.dataset.fitKey = mountFitKey(mount, mode);
     syncPdfPageNavFromVisiblePane();
     updatePdfPageArrows(mount);
   }
@@ -422,9 +473,11 @@
   }
 
   function resetPdfMount(mount) {
+    pdfRenderGeneration += 1;
     unbindPdfPageNav(mount);
     delete mount.dataset.rendered;
     delete mount.dataset.pdfPageTotal;
+    delete mount.dataset.fitKey;
     mount.classList.remove(
       "viewer-pdf-scroll",
       "viewer-pdf-scroll-vertical",
@@ -435,10 +488,15 @@
     updatePdfPageArrows(mount);
   }
 
-  async function ensurePdfPaneRendered(pane) {
-    const mount = pane.querySelector(".viewer-pdf-mount");
-    if (!mount) return;
-    await renderPdfMount(mount);
+  function schedulePdfPaneRelayout() {
+    if (pdfRelayoutScheduled) return;
+    pdfRelayoutScheduled = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        pdfRelayoutScheduled = false;
+        rerenderVisiblePdfPane();
+      });
+    });
   }
 
   async function rerenderVisiblePdfPane() {
@@ -448,24 +506,37 @@
     if (!mount) return;
     const url = mount.dataset.pdfUrl;
     if (!url) return;
+    const mode = loadPdfScrollMode();
+    if (mount.dataset.rendered === "true") {
+      const fitKey = mountFitKey(mount, mode);
+      if (mount.dataset.fitKey === fitKey) return;
+    }
     const currentPage = mount.dataset.rendered === "true" ? currentPdfPage(mount) : 1;
     setPdfScrollModeBtnVisible(true);
     updatePdfScrollModeUi();
-    resetPdfMount(mount);
     try {
       const pdf = await loadPdfDocument(url);
-      await setupPdfMount(mount, pdf);
+      const reuseSlots = mount.dataset.rendered === "true"
+        && mount.querySelectorAll(".viewer-pdf-page-slot").length === pdf.numPages;
+      await setupPdfMount(mount, pdf, { focusPage: currentPage, reuseSlots });
+      if (mount.dataset.rendered !== "true") return;
       scrollPdfToPage(mount, currentPage);
       syncPdfPageNavFromVisiblePane();
       updatePdfPageArrows(mount);
     } catch {
-      mount.replaceChildren();
+      resetPdfMount(mount);
       const err = document.createElement("p");
       err.className = "viewer-pdf-error";
       err.textContent = "Could not load PDF";
       mount.appendChild(err);
       setPdfScrollModeBtnVisible(false);
     }
+  }
+
+  async function ensurePdfPaneRendered(pane) {
+    const mount = pane.querySelector(".viewer-pdf-mount");
+    if (!mount) return;
+    await renderPdfMount(mount);
   }
 
   function showPane(fileId) {
@@ -529,6 +600,18 @@
     return `<div class="viewer-download-hint"><p>${file.display_name}</p></div>`;
   }
 
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function viewerFileIcon(media) {
+    return VIEWER_FILE_ICONS[media] || VIEWER_FILE_ICONS.file;
+  }
+
   function renderToolbar(files, selectedFileId) {
     if (files.length <= 1) {
       toolbar.classList.add("hidden");
@@ -543,7 +626,10 @@
       btn.className = "viewer-toolbar-item";
       if (file.id === selectedFileId) btn.classList.add("active");
       btn.dataset.fileId = file.id;
-      btn.textContent = file.display_name;
+      btn.dataset.media = file.media || "file";
+      const label = file.type_label || file.display_name;
+      btn.title = label;
+      btn.innerHTML = `<span class="viewer-file-icon" aria-hidden="true">${viewerFileIcon(file.media)}</span><span class="viewer-file-label">${escapeHtml(file.display_name)}</span>`;
       btn.addEventListener("click", () => showPane(file.id));
       toolbar.appendChild(btn);
     });
@@ -604,16 +690,20 @@
     }
   }
 
+  function fullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
   function updateFullscreenIcon() {
     if (!fullscreenBtn) return;
-    const inFs = document.fullscreenElement === panel;
+    const inFs = fullscreenElement() === panel;
     fullscreenBtn.querySelector(".viewer-icon-fullscreen-enter").classList.toggle("hidden", inFs);
     fullscreenBtn.querySelector(".viewer-icon-fullscreen-exit").classList.toggle("hidden", !inFs);
     fullscreenBtn.setAttribute("aria-label", inFs ? "Exit fullscreen" : "Enter fullscreen");
   }
 
   function exitFullscreenIfNeeded() {
-    if (document.fullscreenElement === panel && document.exitFullscreen) {
+    if (fullscreenElement() === panel && document.exitFullscreen) {
       document.exitFullscreen();
     }
   }
@@ -721,16 +811,18 @@
       if (nextBtn.dataset.targetId) open(nextBtn.dataset.targetId, context.scoreIds, context.navQuery);
     });
     fullscreenBtn.addEventListener("click", () => {
-      if (document.fullscreenElement === panel) {
-        document.exitFullscreen?.();
+      if (fullscreenElement() === panel) {
+        document.exitFullscreen?.() || document.webkitExitFullscreen?.();
         return;
       }
-      panel.requestFullscreen?.();
+      panel.requestFullscreen?.() || panel.webkitRequestFullscreen?.();
     });
-    document.addEventListener("fullscreenchange", () => {
+    const onFullscreenChange = () => {
       updateFullscreenIcon();
-      rerenderVisiblePdfPane();
-    });
+      schedulePdfPaneRelayout();
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) close();
     });
