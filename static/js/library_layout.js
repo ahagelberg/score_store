@@ -8,6 +8,9 @@
   const FOLDER_PARENT_KEY = "parent_id";
   const FOLDER_LIST_ENTRY_CLASS = "folder-list-entry";
   const LAYOUT_PARAM_KEYS = ["view", "folder", "user_folder"];
+  const FOLDER_DEPTH_PARSE_RADIX = 10;
+  const FOLDER_DEPTH_STEP = 1;
+  const FOLDER_TREE_ROOT_DEPTH = 0;
 
   function loadLayout() {
     try {
@@ -66,6 +69,139 @@
     } catch {
       return [];
     }
+  }
+
+  function saveFolders(workspace, folders) {
+    workspace.dataset.folders = JSON.stringify(folders);
+  }
+
+  function applyScoreFolderToAccordion(accordion, folderId) {
+    accordion.dataset.scoreFolderId = folderId;
+    accordion.dataset.folderId = folderId;
+  }
+
+  function canManageFolders(workspace) {
+    return !!workspace.querySelector(".new-folder-btn");
+  }
+
+  function folderTreeItem(workspace, folderId) {
+    return workspace.querySelector(`.folder-tree-item[data-folder-id="${CSS.escape(folderId)}"]`);
+  }
+
+  function setFolderTreeItemDepth(item, depth) {
+    item.dataset.depth = String(depth);
+    const link = item.querySelector(":scope > .folder-tree-row > .folder-tree-link");
+    if (link) link.style.setProperty("--folder-depth", String(depth));
+    item.querySelectorAll(":scope > .folder-tree-children > .folder-tree-item").forEach((child) => {
+      setFolderTreeItemDepth(child, depth + FOLDER_DEPTH_STEP);
+    });
+  }
+
+  function insertFolderTreeItemSorted(parentChildren, item, folderName) {
+    const siblings = [...parentChildren.querySelectorAll(":scope > .folder-tree-item")];
+    const insertBefore = siblings.find((sibling) => {
+      const siblingName = sibling.querySelector(".folder-tree-name")?.textContent || "";
+      return (folderName || "").localeCompare(siblingName, undefined, { sensitivity: "base" }) < 0;
+    });
+    if (insertBefore) parentChildren.insertBefore(item, insertBefore);
+    else parentChildren.appendChild(item);
+  }
+
+  function buildFolderTreeItem(folder, libraryCtx, depth, manageFolders) {
+    const li = document.createElement("li");
+    li.className = "folder-tree-item drop-target";
+    li.dataset.dropKind = "folder";
+    li.dataset.folderId = folder.id;
+    li.dataset.depth = String(depth);
+    li.dataset.libraryCtx = libraryCtx;
+    const row = document.createElement("div");
+    row.className = "folder-tree-row";
+    const link = document.createElement("a");
+    link.className = "folder-tree-link";
+    link.href = "#";
+    link.dataset.folderId = folder.id;
+    link.style.setProperty("--folder-depth", String(depth));
+    const icon = document.createElement("span");
+    icon.className = "folder-tree-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "📁";
+    const name = document.createElement("span");
+    name.className = "folder-tree-name";
+    name.textContent = folder.name || folder.id;
+    link.append(icon, name);
+    row.appendChild(link);
+    if (manageFolders && folder.id !== ROOT_FOLDER_ID) {
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "btn-icon btn-icon-sm delete-folder-btn";
+      deleteBtn.dataset.folderId = folder.id;
+      deleteBtn.dataset.libraryCtx = libraryCtx;
+      deleteBtn.title = "Delete folder";
+      deleteBtn.textContent = "×";
+      row.appendChild(deleteBtn);
+    }
+    const children = document.createElement("ul");
+    children.className = "folder-tree-children";
+    li.append(row, children);
+    return li;
+  }
+
+  function insertFolder(workspace, folder) {
+    const folders = parseFolders(workspace);
+    folders.push(folder);
+    saveFolders(workspace, folders);
+    const libraryCtx = workspace.dataset.libraryCtx || workspaceCtx(workspace);
+    const parentId = folder[FOLDER_PARENT_KEY] || ROOT_FOLDER_ID;
+    const parentItem = folderTreeItem(workspace, parentId);
+    const parentChildren = parentItem?.querySelector(":scope > .folder-tree-children");
+    if (!parentChildren) return;
+    const parentDepth = parseInt(parentItem.dataset.depth || String(FOLDER_TREE_ROOT_DEPTH), FOLDER_DEPTH_PARSE_RADIX);
+    const item = buildFolderTreeItem(folder, libraryCtx, parentDepth + FOLDER_DEPTH_STEP, canManageFolders(workspace));
+    insertFolderTreeItemSorted(parentChildren, item, folder.name);
+    window.LibraryDrop?.bindDropTarget?.(item);
+    refreshWorkspace(workspace);
+  }
+
+  function removeFolder(workspace, folderId) {
+    const folders = parseFolders(workspace);
+    const folder = folderById(folders, folderId);
+    if (!folder) return;
+    const parentId = folder[FOLDER_PARENT_KEY] || ROOT_FOLDER_ID;
+    const updated = folders
+      .filter((entry) => entry.id !== folderId)
+      .map((entry) => {
+        if ((entry[FOLDER_PARENT_KEY] || ROOT_FOLDER_ID) === folderId) {
+          return { ...entry, [FOLDER_PARENT_KEY]: parentId };
+        }
+        return entry;
+      });
+    saveFolders(workspace, updated);
+    workspace.querySelectorAll(".score-accordion").forEach((accordion) => {
+      if ((accordion.dataset.scoreFolderId || ROOT_FOLDER_ID) === folderId) {
+        applyScoreFolderToAccordion(accordion, parentId);
+      }
+    });
+    const item = folderTreeItem(workspace, folderId);
+    if (item) {
+      const parentItem = item.parentElement?.closest(".folder-tree-item");
+      const parentChildren = parentItem?.querySelector(":scope > .folder-tree-children");
+      const deletedChildren = item.querySelector(":scope > .folder-tree-children");
+      if (parentChildren && deletedChildren) {
+        const parentDepth = parseInt(parentItem.dataset.depth || String(FOLDER_TREE_ROOT_DEPTH), FOLDER_DEPTH_PARSE_RADIX);
+        while (deletedChildren.firstChild) {
+          const child = deletedChildren.firstChild;
+          parentChildren.appendChild(child);
+          setFolderTreeItemDepth(child, parentDepth + FOLDER_DEPTH_STEP);
+        }
+      }
+      item.remove();
+    }
+    const layout = loadLayout();
+    if (storedFolderId(layout, workspace) === folderId) {
+      setFolder(workspace, parentId, layout);
+      return;
+    }
+    refreshWorkspace(workspace);
   }
 
   function folderById(folders, folderId) {
@@ -262,17 +398,21 @@
         setViewMode(workspace, mode, layout);
       });
     });
-    workspace.querySelectorAll(".folder-tree-link").forEach((link) => {
-      link.addEventListener("click", (e) => {
+    if (!workspace.dataset.folderTreeClickBound) {
+      workspace.dataset.folderTreeClickBound = "true";
+      workspace.addEventListener("click", (e) => {
+        const link = e.target.closest(".folder-tree-link");
+        if (!link || !workspace.contains(link)) return;
         e.preventDefault();
+        const activeLayout = loadLayout();
         if (workspace.dataset.libraryView !== VIEW_FOLDER) {
-          layout.viewMode = VIEW_FOLDER;
-          saveLayout(layout);
-          setViewMode(workspace, VIEW_FOLDER, layout);
+          activeLayout.viewMode = VIEW_FOLDER;
+          saveLayout(activeLayout);
+          setViewMode(workspace, VIEW_FOLDER, activeLayout);
         }
-        setFolder(workspace, link.dataset.folderId || ROOT_FOLDER_ID, layout);
+        setFolder(workspace, link.dataset.folderId || ROOT_FOLDER_ID, activeLayout);
       });
-    });
+    }
   }
 
   function initChoirReset(root) {
@@ -309,6 +449,9 @@
     loadLayout,
     saveLayout,
     folderIdForWorkspace,
+    insertFolder,
+    removeFolder,
+    applyScoreFolderToAccordion,
     STORAGE_KEY,
   };
   document.addEventListener("DOMContentLoaded", () => {

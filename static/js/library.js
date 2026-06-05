@@ -70,16 +70,48 @@
     return document.querySelector(`.library-workspace[data-library-ctx="${USER_LIBRARY_CTX_PREFIX}${userId}"]`);
   }
 
+  function scoreAccordionInWorkspace(workspace, scoreId) {
+    if (!workspace || !scoreId) return null;
+    return workspace.querySelector(`.score-accordion[data-score-id="${CSS.escape(scoreId)}"]`);
+  }
+
+  function applyScoreFolderToAccordion(accordion, folderId) {
+    if (window.LibraryLayout?.applyScoreFolderToAccordion) {
+      window.LibraryLayout.applyScoreFolderToAccordion(accordion, folderId);
+      return;
+    }
+    accordion.dataset.scoreFolderId = folderId;
+    accordion.dataset.folderId = folderId;
+  }
+
+  function refreshScoreListForWorkspace(workspace) {
+    if (workspace && window.LibraryLayout?.refreshWorkspace) {
+      window.LibraryLayout.refreshWorkspace(workspace);
+    }
+  }
+
+  function updateScoreFolderInDom(scoreId, folderId, target) {
+    const workspace = workspaceFrom(target);
+    const accordion = scoreAccordionInWorkspace(workspace, scoreId)
+      || document.querySelector(`.score-accordion[data-score-id="${CSS.escape(scoreId)}"]`);
+    if (!accordion) return;
+    applyScoreFolderToAccordion(accordion, folderId);
+    const ws = workspace || accordion.closest(".library-workspace");
+    if (accordion.classList.contains("score-accordion-expanded") && ws) {
+      window.ScoreEditor?.collapseAllExpanded?.(ws);
+    }
+    refreshScoreListForWorkspace(ws);
+  }
+
   function insertAssignedScore(userId, folderId, score, target) {
     if (!score?.id) return;
     const libraryCtx = `${USER_LIBRARY_CTX_PREFIX}${userId}`;
     const workspace = userLibraryWorkspace(userId) || workspaceFrom(target);
     const list = workspace?.querySelector(".score-list");
     if (!list) return;
-    const existing = list.querySelector(`.score-accordion[data-score-id="${CSS.escape(score.id)}"]`);
+    const existing = scoreAccordionInWorkspace(workspace, score.id);
     if (existing) {
-      existing.dataset.scoreFolderId = folderId;
-      existing.dataset.folderId = folderId;
+      applyScoreFolderToAccordion(existing, folderId);
     } else {
       ScoreEditor.insertScoreAccordion(list, score, libraryCtx, folderId, {
         expanded: false,
@@ -88,9 +120,7 @@
         expandMode: "keep",
       });
     }
-    if (workspace && window.LibraryLayout?.refreshWorkspace) {
-      window.LibraryLayout.refreshWorkspace(workspace);
-    }
+    refreshScoreListForWorkspace(workspace);
   }
 
   function parseDragData(e) {
@@ -192,8 +222,8 @@
         body: JSON.stringify({ folder_id: folderId }),
       });
       if (res.ok) {
+        updateScoreFolderInDom(scoreDragId, folderId, target);
         showToast("Score moved");
-        location.reload();
       } else {
         const data = await res.json();
         showToast(data.error || "Move failed", true);
@@ -224,7 +254,11 @@
         showToast(data.error || "Move failed", true);
         return;
       }
-      location.reload();
+      if (ScoreEditor.moveAuxFileInDom(dragPayload.scoreId, dragPayload.fileId, toScore)) {
+        showToast("File moved");
+      } else {
+        showToast("File moved; refresh to see changes");
+      }
       return;
     }
 
@@ -311,34 +345,65 @@
     });
   }
 
-  function bindFolderActions(root) {
-    root.querySelectorAll(".new-folder-btn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const name = window.prompt("Folder name");
-        if (!name) return;
-        const ctx = btn.dataset.libraryCtx;
-        const workspace = btn.closest(".library-workspace");
-        const parentId = workspace && window.LibraryLayout?.folderIdForWorkspace
-          ? window.LibraryLayout.folderIdForWorkspace(workspace)
-          : "root";
-        const fd = new FormData();
-        fd.append("name", name);
-        fd.append("parent_id", parentId);
-        const res = await Csrf.fetch(`/library/${ctx}/folders/new`, {
-          method: "POST",
-          body: fd,
-          headers: { "X-Requested-With": "XMLHttpRequest" },
-        });
-        if (res.ok) location.reload();
-        else showToast("Folder create failed", true);
-      });
+  async function createFolder(btn) {
+    const name = window.prompt("Folder name");
+    if (!name) return;
+    const ctx = btn.dataset.libraryCtx;
+    const workspace = btn.closest(".library-workspace");
+    const parentId = workspace && window.LibraryLayout?.folderIdForWorkspace
+      ? window.LibraryLayout.folderIdForWorkspace(workspace)
+      : "root";
+    const fd = new FormData();
+    fd.append("name", name);
+    fd.append("parent_id", parentId);
+    const res = await Csrf.fetch(`/library/${ctx}/folders/new`, {
+      method: "POST",
+      body: fd,
+      headers: { "X-Requested-With": "XMLHttpRequest" },
     });
-    root.querySelectorAll(".delete-folder-btn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        if (!window.confirm("Delete this folder? Subfolders and scores move to the parent folder.")) return;
-        const res = await Csrf.fetch(`/library/${btn.dataset.libraryCtx}/folders/${btn.dataset.folderId}/delete`, { method: "POST" });
-        if (res.ok) location.reload();
-      });
+    if (!res.ok) {
+      showToast("Folder create failed", true);
+      return;
+    }
+    const folder = await res.json();
+    if (workspace && window.LibraryLayout?.insertFolder) {
+      window.LibraryLayout.insertFolder(workspace, folder);
+    }
+    showToast("Folder created");
+  }
+
+  async function deleteFolder(btn) {
+    if (!window.confirm("Delete this folder? Subfolders and scores move to the parent folder.")) return;
+    const workspace = btn.closest(".library-workspace");
+    const res = await Csrf.fetch(
+      `/library/${btn.dataset.libraryCtx}/folders/${btn.dataset.folderId}/delete`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      showToast("Folder delete failed", true);
+      return;
+    }
+    if (workspace && window.LibraryLayout?.removeFolder) {
+      window.LibraryLayout.removeFolder(workspace, btn.dataset.folderId);
+    }
+    showToast("Folder deleted");
+  }
+
+  function bindFolderActions(root) {
+    if (root.dataset.folderActionsBound) return;
+    root.dataset.folderActionsBound = "true";
+    root.addEventListener("click", (e) => {
+      const newBtn = e.target.closest(".new-folder-btn");
+      if (newBtn && root.contains(newBtn)) {
+        e.preventDefault();
+        createFolder(newBtn);
+        return;
+      }
+      const deleteBtn = e.target.closest(".delete-folder-btn");
+      if (deleteBtn && root.contains(deleteBtn)) {
+        e.preventDefault();
+        deleteFolder(deleteBtn);
+      }
     });
   }
 

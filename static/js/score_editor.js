@@ -584,6 +584,27 @@
     });
   }
 
+  function moveAuxFileInDom(srcScoreId, fileId, dstScoreId) {
+    const srcItem = document.querySelector(
+      `.score-accordion[data-score-id="${CSS.escape(srcScoreId)}"] .aux-file-item[data-file-id="${CSS.escape(fileId)}"]`,
+    );
+    const dstList = document.querySelector(
+      `.score-accordion[data-score-id="${CSS.escape(dstScoreId)}"] [data-aux-list]`,
+    );
+    if (!srcItem || !dstList) return false;
+    srcItem.remove();
+    dstList.appendChild(srcItem);
+    bindAuxFileItem(srcItem, dstScoreId);
+    const srcAccordion = document.querySelector(`.score-accordion[data-score-id="${CSS.escape(srcScoreId)}"]`);
+    const dstAccordion = dstList.closest(".score-accordion");
+    if (srcAccordion) syncAuxIndicator(srcAccordion);
+    if (dstAccordion) {
+      syncAuxIndicator(dstAccordion);
+      bindFilenameFields(dstAccordion);
+    }
+    return true;
+  }
+
   async function removeAux(scoreId, fileId, row) {
     const res = await Csrf.fetch(`/scores/${scoreId}/files/${fileId}/remove`, { method: "POST" });
     const data = await res.json();
@@ -799,6 +820,7 @@
     insertScoreAccordion,
     replaceAccordionFromScore,
     collapseAllExpanded,
+    moveAuxFileInDom,
     DRAG_MIME,
   };
 
