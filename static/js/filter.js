@@ -83,6 +83,7 @@
       if (window.LibraryLayout?.syncScoreIdsForWorkspace) {
         window.LibraryLayout.syncScoreIdsForWorkspace(workspace);
       }
+      window.ScoreEditorPreview?.reconcile?.();
     }
 
     if (input) {

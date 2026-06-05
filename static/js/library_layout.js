@@ -216,6 +216,7 @@
     });
     syncScoreIds(workspace);
     if (window.ScoreFilter?.reapplyAll) window.ScoreFilter.reapplyAll();
+    window.ScoreEditorPreview?.reconcile?.();
   }
 
   function setViewMode(workspace, viewMode, layout) {
@@ -232,12 +233,16 @@
 
   function setFolder(workspace, folderId, layout) {
     if (!layout.folders) layout.folders = {};
+    const previousFolderId = storedFolderId(layout, workspace);
     layout.folders[workspaceCtx(workspace)] = folderId;
     saveLayout(layout);
     const viewMode = workspace.dataset.libraryView || VIEW_LIST;
     setActiveFolderLink(workspace, folderId);
     setDropFolderIds(workspace, folderId);
     updateFolderBreadcrumb(workspace, viewMode, folderId);
+    if (previousFolderId !== folderId) {
+      window.ScoreEditor?.collapseAllExpanded?.(workspace);
+    }
     applyFolderFilter(workspace, viewMode, folderId);
   }
 

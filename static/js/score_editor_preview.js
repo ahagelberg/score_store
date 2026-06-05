@@ -6,7 +6,19 @@
   const PREVIEW_MAX_OUTPUT_SCALE = 2;
   const PREVIEW_LOADING_LABEL = "Loading…";
   const PREVIEW_ERROR_LABEL = "Preview unavailable";
+  const PREVIEW_DEFAULT_TITLE = "New score";
   const PREVIEW_FLOAT_ID = "score-editor-preview-float";
+  const PREVIEW_LABEL_FIELD_SELECTOR = '[data-field="title"], [data-field="composer"], [data-field="year"]';
+  const PREVIEW_BASE_WIDTH_PX = 280;
+  const PREVIEW_WIDTH_SCALE = 2;
+  const PREVIEW_PREFERRED_WIDTH_PX = PREVIEW_BASE_WIDTH_PX * PREVIEW_WIDTH_SCALE;
+  const PREVIEW_MIN_WIDTH_PX = 200;
+  const PREVIEW_GAP_PX = 8;
+  const PREVIEW_VIEWPORT_MARGIN_PX = 8;
+  const PREVIEW_TAIL_SIZE_PX = 10;
+  const PREVIEW_MAX_HEIGHT_VH_RATIO = 0.85;
+  const PREVIEW_TAIL_MIN_PX = 16;
+  const PREVIEW_TAIL_MAX_INSET_PX = 24;
 
   let pdfWorkerReady = false;
   let pdfWorkerUrl = "";
@@ -15,6 +27,12 @@
   let renderGeneration = 0;
   let activeItem = null;
   let floatPanel = null;
+  let positionListenersBound = false;
+  let editorResizeObserver = null;
+  let repositionFrame = 0;
+  let appliedPreviewWidthPx = 0;
+  let previewLabelInputsItem = null;
+  let activeItemObserver = null;
 
   function pdfLib() {
     return window.pdfjsLib || null;
@@ -54,8 +72,83 @@
     return item?.dataset?.previewPdfUrl || "";
   }
 
+  function previewEligible(item) {
+    if (!item?.isConnected) return false;
+    if (!item.classList.contains("score-accordion-expanded")) return false;
+    if (item.classList.contains("filter-hidden")) return false;
+    const editor = editorElement(item);
+    if (!editor || editor.classList.contains("hidden")) return false;
+    return !!previewUrl(item);
+  }
+
+  function editorElement(item) {
+    return item?.querySelector("[data-score-editor]") || null;
+  }
+
   function floatMount() {
     return floatPanel?.querySelector(".score-editor-preview-mount") || null;
+  }
+
+  function previewSubtitleLine(composer, year) {
+    if (composer && year) return `${composer} (${year})`;
+    if (composer) return composer;
+    if (year) return `(${year})`;
+    return "";
+  }
+
+  function previewLabelForItem(item) {
+    const title = item.querySelector('[data-field="title"]')?.value?.trim()
+      || item.querySelector(".score-summary-title")?.textContent?.trim()
+      || PREVIEW_DEFAULT_TITLE;
+    const composer = item.querySelector('[data-field="composer"]')?.value?.trim() || "";
+    const year = item.querySelector('[data-field="year"]')?.value?.trim() || "";
+    const subtitle = previewSubtitleLine(composer, year)
+      || item.querySelector(".score-summary-composer")?.textContent?.trim()
+      || "";
+    return { title, subtitle };
+  }
+
+  function updatePreviewLabel(item) {
+    if (!floatPanel || !item) return;
+    const { title, subtitle } = previewLabelForItem(item);
+    const titleEl = floatPanel.querySelector(".score-editor-preview-title");
+    const subtitleEl = floatPanel.querySelector(".score-editor-preview-composer");
+    if (titleEl) titleEl.textContent = title;
+    if (subtitleEl) {
+      subtitleEl.textContent = subtitle;
+      subtitleEl.classList.toggle("hidden", !subtitle);
+    }
+    const scoreId = item.dataset.scoreId || "";
+    if (scoreId) floatPanel.dataset.scoreId = scoreId;
+    else delete floatPanel.dataset.scoreId;
+  }
+
+  function onPreviewLabelInput() {
+    if (!activeItem) return;
+    updatePreviewLabel(activeItem);
+  }
+
+  function clearPreviewLabelInputs() {
+    if (!previewLabelInputsItem) return;
+    previewLabelInputsItem.querySelectorAll(PREVIEW_LABEL_FIELD_SELECTOR).forEach((el) => {
+      el.removeEventListener("input", onPreviewLabelInput);
+    });
+    previewLabelInputsItem = null;
+  }
+
+  function bindPreviewLabelInputs(item) {
+    clearPreviewLabelInputs();
+    previewLabelInputsItem = item;
+    item.querySelectorAll(PREVIEW_LABEL_FIELD_SELECTOR).forEach((el) => {
+      el.addEventListener("input", onPreviewLabelInput);
+    });
+  }
+
+  function setPreviewActiveItem(item) {
+    document.querySelectorAll(".score-accordion-preview-active").forEach((el) => {
+      el.classList.remove("score-accordion-preview-active");
+    });
+    if (item) item.classList.add("score-accordion-preview-active");
   }
 
   function ensureFloatPanel() {
@@ -64,9 +157,21 @@
     floatPanel.id = PREVIEW_FLOAT_ID;
     floatPanel.className = "score-editor-preview-float hidden";
     floatPanel.setAttribute("aria-hidden", "true");
+    const bubble = document.createElement("div");
+    bubble.className = "score-editor-preview-bubble";
+    const header = document.createElement("div");
+    header.className = "score-editor-preview-header";
+    const titleEl = document.createElement("span");
+    titleEl.className = "score-editor-preview-title";
+    const subtitleEl = document.createElement("span");
+    subtitleEl.className = "score-editor-preview-composer hidden";
+    header.appendChild(titleEl);
+    header.appendChild(subtitleEl);
     const mount = document.createElement("div");
     mount.className = "score-editor-preview-mount";
-    floatPanel.appendChild(mount);
+    bubble.appendChild(header);
+    bubble.appendChild(mount);
+    floatPanel.appendChild(bubble);
     document.body.appendChild(floatPanel);
     return floatPanel;
   }
@@ -78,6 +183,117 @@
     resizeObservers.delete(mount);
   }
 
+  function clearEditorResizeObserver() {
+    if (!editorResizeObserver) return;
+    editorResizeObserver.disconnect();
+    editorResizeObserver = null;
+  }
+
+  function clearActiveItemObserver() {
+    if (!activeItemObserver) return;
+    activeItemObserver.disconnect();
+    activeItemObserver = null;
+  }
+
+  function bindActiveItemObserver(item) {
+    clearActiveItemObserver();
+    if (!item || typeof MutationObserver === "undefined") return;
+    activeItemObserver = new MutationObserver(() => reconcile());
+    activeItemObserver.observe(item, { attributes: true, attributeFilter: ["class"] });
+    const editor = editorElement(item);
+    if (editor) {
+      activeItemObserver.observe(editor, { attributes: true, attributeFilter: ["class"] });
+    }
+  }
+
+  function scheduleReposition() {
+    if (!activeItem) return;
+    if (repositionFrame) return;
+    repositionFrame = requestAnimationFrame(() => {
+      repositionFrame = 0;
+      reconcile();
+    });
+  }
+
+  function bindPositionListeners() {
+    if (positionListenersBound) return;
+    positionListenersBound = true;
+    window.addEventListener("resize", scheduleReposition);
+    document.addEventListener("scroll", scheduleReposition, true);
+  }
+
+  function bindEditorResizeObserver(item) {
+    clearEditorResizeObserver();
+    const editor = editorElement(item);
+    if (!editor || typeof ResizeObserver === "undefined") return;
+    editorResizeObserver = new ResizeObserver(scheduleReposition);
+    editorResizeObserver.observe(editor);
+  }
+
+  function preferredPreviewWidthPx() {
+    const value = getComputedStyle(document.documentElement).getPropertyValue("--score-editor-preview-width");
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : PREVIEW_PREFERRED_WIDTH_PX;
+  }
+
+  function previewWidthForEditor(editorRect, viewportWidth) {
+    const spaceRight = viewportWidth - PREVIEW_VIEWPORT_MARGIN_PX - editorRect.right - PREVIEW_GAP_PX;
+    return Math.max(PREVIEW_MIN_WIDTH_PX, Math.min(preferredPreviewWidthPx(), spaceRight));
+  }
+
+  function applyPreviewWidth(panel, widthPx) {
+    if (appliedPreviewWidthPx === widthPx) return false;
+    appliedPreviewWidthPx = widthPx;
+    panel.style.width = `${widthPx}px`;
+    return true;
+  }
+
+  function positionPanel(item) {
+    if (!previewEligible(item)) {
+      hideFloatPanel();
+      return;
+    }
+    const panel = floatPanel;
+    const editor = editorElement(item);
+    if (!panel || panel.classList.contains("hidden") || !editor) return;
+    const editorRect = editor.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const maxHeight = Math.floor(viewportHeight * PREVIEW_MAX_HEIGHT_VH_RATIO);
+    panel.style.setProperty("--score-editor-preview-max-height", `${maxHeight}px`);
+    const widthChanged = applyPreviewWidth(panel, previewWidthForEditor(editorRect, viewportWidth));
+    const panelWidth = panel.offsetWidth;
+    let left = editorRect.right + PREVIEW_GAP_PX;
+    let top = editorRect.top;
+    if (left + panelWidth > viewportWidth - PREVIEW_VIEWPORT_MARGIN_PX) {
+      left = viewportWidth - panelWidth - PREVIEW_VIEWPORT_MARGIN_PX;
+    }
+    if (left < PREVIEW_VIEWPORT_MARGIN_PX) left = PREVIEW_VIEWPORT_MARGIN_PX;
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    const panelHeight = panel.offsetHeight;
+    if (top + panelHeight > viewportHeight - PREVIEW_VIEWPORT_MARGIN_PX) {
+      top = Math.max(
+        PREVIEW_VIEWPORT_MARGIN_PX,
+        viewportHeight - panelHeight - PREVIEW_VIEWPORT_MARGIN_PX
+      );
+      panel.style.top = `${top}px`;
+    }
+    const editorMid = editorRect.top + editorRect.height / 2 - top;
+    const tailTop = Math.max(
+      PREVIEW_TAIL_MIN_PX,
+      Math.min(editorMid - PREVIEW_TAIL_SIZE_PX, panelHeight - PREVIEW_TAIL_MAX_INSET_PX)
+    );
+    panel.style.setProperty("--score-editor-preview-tail-top", `${tailTop}px`);
+    if (widthChanged) {
+      const mount = floatMount();
+      if (mount?.dataset.pdfUrl) {
+        renderGeneration += 1;
+        renderFirstPage(mount, renderGeneration);
+      }
+    }
+  }
+
   async function renderFirstPage(mount, generation) {
     const pdfUrl = mount.dataset.pdfUrl;
     if (!pdfUrl) return;
@@ -87,6 +303,7 @@
     loading.className = "score-editor-preview-loading";
     loading.textContent = PREVIEW_LOADING_LABEL;
     mount.appendChild(loading);
+    scheduleReposition();
     try {
       const pdf = await loadPdfDocument(pdfUrl);
       if (mount.dataset.renderGen !== String(generation)) return;
@@ -107,6 +324,7 @@
       await page.render({ canvasContext: ctx, viewport }).promise;
       if (mount.dataset.renderGen !== String(generation)) return;
       mount.replaceChildren(canvas);
+      scheduleReposition();
     } catch {
       if (mount.dataset.renderGen !== String(generation)) return;
       mount.replaceChildren();
@@ -114,6 +332,7 @@
       err.className = "score-editor-preview-loading score-editor-preview-error";
       err.textContent = PREVIEW_ERROR_LABEL;
       mount.appendChild(err);
+      scheduleReposition();
     }
   }
 
@@ -123,6 +342,7 @@
     const observer = new ResizeObserver(() => {
       if (mount.dataset.renderGen !== String(generation)) return;
       renderFirstPage(mount, generation);
+      scheduleReposition();
     });
     observer.observe(mount);
     resizeObservers.set(mount, observer);
@@ -137,34 +357,61 @@
       mount.replaceChildren();
       delete mount.dataset.pdfUrl;
     }
+    clearEditorResizeObserver();
+    clearActiveItemObserver();
+    clearPreviewLabelInputs();
+    setPreviewActiveItem(null);
+    appliedPreviewWidthPx = 0;
     if (!floatPanel) return;
     floatPanel.classList.add("hidden");
     floatPanel.setAttribute("aria-hidden", "true");
+    delete floatPanel.dataset.scoreId;
     activeItem = null;
   }
 
-  function sync(item) {
+  function attachPreview(item) {
     const url = previewUrl(item);
     if (!url) {
-      if (activeItem === item) hideFloatPanel();
+      hideFloatPanel();
       return;
     }
     activeItem = item;
+    bindPositionListeners();
+    bindEditorResizeObserver(item);
+    bindPreviewLabelInputs(item);
+    bindActiveItemObserver(item);
+    setPreviewActiveItem(item);
     const panel = ensureFloatPanel();
     const mount = floatMount();
     panel.classList.remove("hidden");
     panel.setAttribute("aria-hidden", "false");
+    updatePreviewLabel(item);
     mount.dataset.pdfUrl = url;
     renderGeneration += 1;
     const generation = renderGeneration;
     bindResize(mount, generation);
+    positionPanel(item);
     renderFirstPage(mount, generation);
   }
 
-  function clear(item) {
-    if (activeItem !== item) return;
+  function reconcile(item) {
+    if (item !== undefined) {
+      if (previewEligible(item)) {
+        attachPreview(item);
+        return;
+      }
+      if (activeItem === item || !activeItem || !previewEligible(activeItem)) {
+        hideFloatPanel();
+      }
+      return;
+    }
+    if (activeItem && previewEligible(activeItem)) {
+      updatePreviewLabel(activeItem);
+      positionPanel(activeItem);
+      return;
+    }
     hideFloatPanel();
   }
 
-  window.ScoreEditorPreview = { sync, clear };
+  window.ScoreEditorPreview = { reconcile };
 })();

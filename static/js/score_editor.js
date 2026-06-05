@@ -8,11 +8,7 @@
   const ICON_PAPERCLIP = `<svg class="icon-paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
 
   function syncEditorPreview(item) {
-    if (item.classList.contains("score-accordion-expanded")) {
-      window.ScoreEditorPreview?.sync?.(item);
-    } else {
-      window.ScoreEditorPreview?.clear?.(item);
-    }
+    window.ScoreEditorPreview?.reconcile?.(item);
   }
 
   function setAccordionExpanded(item, expanded) {
@@ -46,6 +42,11 @@
     document.querySelectorAll(".score-accordion-expanded").forEach((el) => {
       if (el !== except) collapseAccordion(el);
     });
+  }
+
+  function collapseAllExpanded(scope) {
+    const root = scope || document;
+    root.querySelectorAll(".score-accordion-expanded").forEach((el) => collapseAccordion(el));
   }
 
   function syncTagsOnExpand(item) {
@@ -434,6 +435,7 @@
     bindAccordion(newItem);
     if (window.TagInput) window.TagInput.initAll(newItem);
     window.LibraryDrop?.bindDropTargets?.(newItem);
+    window.ScoreEditorPreview?.reconcile?.(newItem);
     return newItem;
   }
 
@@ -752,8 +754,10 @@
           : "Remove this score from your library? It will remain available elsewhere.";
         if (!window.confirm(msg)) return;
         const res = await Csrf.fetch(`/scores/${deleteBtn.dataset.scoreId}/delete`, { method: "POST" });
-        if (res.ok) item.remove();
-        else showToast(hardDelete ? "Delete failed" : "Remove failed", true);
+        if (res.ok) {
+          item.remove();
+          window.ScoreEditorPreview?.reconcile?.(item);
+        } else showToast(hardDelete ? "Delete failed" : "Remove failed", true);
       });
     }
   }
@@ -775,7 +779,7 @@
     document.querySelectorAll(".score-accordion").forEach((item) => {
       bindAccordion(item);
       if (item.classList.contains("score-accordion-expanded")) {
-        window.ScoreEditorPreview?.sync?.(item);
+        window.ScoreEditorPreview?.reconcile?.(item);
       }
     });
     if (window.TagInput) window.TagInput.initAll(document);
@@ -794,6 +798,7 @@
     splitToNewScore,
     insertScoreAccordion,
     replaceAccordionFromScore,
+    collapseAllExpanded,
     DRAG_MIME,
   };
 
