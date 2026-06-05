@@ -294,8 +294,13 @@
         const name = window.prompt("Folder name");
         if (!name) return;
         const ctx = btn.dataset.libraryCtx;
+        const workspace = btn.closest(".library-workspace");
+        const parentId = workspace && window.LibraryLayout?.folderIdForWorkspace
+          ? window.LibraryLayout.folderIdForWorkspace(workspace)
+          : "root";
         const fd = new FormData();
         fd.append("name", name);
+        fd.append("parent_id", parentId);
         const res = await Csrf.fetch(`/library/${ctx}/folders/new`, {
           method: "POST",
           body: fd,
@@ -307,7 +312,7 @@
     });
     root.querySelectorAll(".delete-folder-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        if (!window.confirm("Delete this folder? Scores move to root.")) return;
+        if (!window.confirm("Delete this folder? Subfolders and scores move to the parent folder.")) return;
         const res = await Csrf.fetch(`/library/${btn.dataset.libraryCtx}/folders/${btn.dataset.folderId}/delete`, { method: "POST" });
         if (res.ok) location.reload();
       });

@@ -369,6 +369,20 @@ textarea.form-control {
   flex-shrink: 0;
 }
 
+.desktop-panel-header-start {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.disk-usage-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
 .desktop-panel-content {
   flex: 1;
   min-height: 0;
@@ -540,11 +554,14 @@ textarea.form-control {
 }
 
 .folder-tree-item {
+  margin: 0 4px;
+  border-radius: var(--radius);
+}
+
+.folder-tree-row {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin: 0 4px;
-  border-radius: var(--radius);
 }
 
 .folder-tree-item:hover {
@@ -556,6 +573,12 @@ textarea.form-control {
   outline: 1px dashed var(--color-primary);
 }
 
+.folder-tree-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
 .folder-tree-link {
   flex: 1;
   display: flex;
@@ -563,6 +586,7 @@ textarea.form-control {
   gap: 6px;
   min-width: 0;
   padding: 5px 8px;
+  padding-left: calc(8px + var(--folder-depth, 0) * 14px);
   color: var(--color-text);
   text-decoration: none;
   font-size: 12px;
@@ -579,10 +603,6 @@ textarea.form-control {
   border-radius: var(--radius);
 }
 
-.folder-tree-child .folder-tree-link {
-  padding-left: 20px;
-}
-
 .folder-tree-icon {
   flex-shrink: 0;
   font-size: 14px;
@@ -596,6 +616,7 @@ textarea.form-control {
 }
 
 .folder-tree-item .delete-folder-btn {
+  flex-shrink: 0;
   opacity: 0;
 }
 

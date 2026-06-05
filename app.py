@@ -251,6 +251,7 @@ def build_library_panel(
     show_header_actions: bool | None = None,
     assign_user: str | None = None,
     summary_opens_viewer: bool = False,
+    disk_usage: dict | None = None,
 ) -> dict:
     if show_header_actions is None:
         show_header_actions = can_upload
@@ -277,7 +278,11 @@ def build_library_panel(
         "score_ids": [s["id"] for s in scores if s.get("id")],
         "assign_user": assign_user,
         "summary_opens_viewer": summary_opens_viewer,
+        "folders": lib.get("folders", []),
+        "folder_tree": store.build_folder_tree(lib),
     }
+    if disk_usage:
+        panel["disk_usage"] = disk_usage
     panel["view_nav"] = score_view_nav_params_from_panel(panel)
     return panel
 
@@ -527,6 +532,7 @@ def maestro():
         can_upload=global_caps["can_upload"],
         can_manage_folders=global_caps["can_manage_folders"],
         draggable_score=True,
+        disk_usage=store.disk_usage_stats(),
     )
     user_library_panel = None
     if selected_user and user_lib:
@@ -792,12 +798,13 @@ def folder_new(library_ctx):
     name = request.form.get("name", "").strip()
     if not name:
         return json_error("Name required")
-    lib = store.load_library(lib_id)
-    fid = store.folder_id_from_name(name, lib["folders"])
-    lib["folders"].append({"id": fid, "name": name})
-    store.save_library(lib_id, lib)
+    parent_id = request.form.get("parent_id", store.ROOT_FOLDER_ID) or store.ROOT_FOLDER_ID
+    try:
+        folder = store.create_folder(lib_id, name, parent_id)
+    except ValueError as e:
+        return json_error(str(e))
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        return jsonify({"id": fid, "name": name})
+        return jsonify(folder)
     return redirect(request.referrer or url_for("index"))
 
 
@@ -808,14 +815,10 @@ def folder_delete(library_ctx, folder_id):
     lib_id = _resolve_library_ctx(user, library_ctx)
     if not policy.user_can_manage_folders_in_library(user, lib_id):
         abort(403)
-    if folder_id == store.ROOT_FOLDER_ID:
-        return json_error("Cannot delete root folder")
-    lib = store.load_library(lib_id)
-    lib["folders"] = [f for f in lib["folders"] if f["id"] != folder_id]
-    for sid, fid in list(lib["score_folders"].items()):
-        if fid == folder_id:
-            lib["score_folders"][sid] = store.ROOT_FOLDER_ID
-    store.save_library(lib_id, lib)
+    try:
+        store.delete_folder(lib_id, folder_id)
+    except ValueError as e:
+        return json_error(str(e))
     return jsonify({"ok": True})
 
 
@@ -896,7 +899,7 @@ def score_set_folder(library_ctx, score_id):
     data = request.get_json(silent=True) or request.form
     folder_id = data.get("folder_id", store.ROOT_FOLDER_ID)
     lib = store.load_library(lib_id)
-    if folder_id not in {f["id"] for f in lib.get("folders", [])}:
+    if folder_id not in store.library_folder_ids(lib):
         return json_error("Unknown folder")
     try:
         store.set_score_folder(lib_id, score_id, folder_id)

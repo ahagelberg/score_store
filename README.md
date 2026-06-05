@@ -76,7 +76,7 @@ docker run -p 5000:5000 -v scorestore-data:/app/data \
 ```
 data/
   users.json                         # id, display_name, username, password, role
-  libraries/_global.json             # library_id, display_name, folders, score_order, score_folders
+  libraries/_global.json             # library_id, display_name, folders[{id,name,parent_id}], score_order, score_folders
   libraries/u-{slug}.json            # library_id, owner_id, display_name, …
   scores/s-{slug}/meta.json
   scores/s-{slug}/files/{slug}.ext   # readable on-disk names (YouTube aux entries have no file)

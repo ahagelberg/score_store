@@ -2,6 +2,7 @@
      data-library-ctx="{{ library_panel.library_ctx }}"
      data-score-ids='{{ library_panel.score_ids|tojson }}'
      data-view-nav='{{ library_panel.view_nav|tojson }}'
+     data-folders='{{ library_panel.folders|tojson }}'
      data-summary-opens-viewer="{{ 'true' if library_panel.summary_opens_viewer else 'false' }}">
   <div class="workspace-toolbar">
     {% include "partials/filter_bar.html" %}
@@ -27,6 +28,7 @@
       <div class="files-pane-header">
         <div class="files-pane-header-start">
           <span class="files-pane-title" data-default-title="{{ library_panel.scores_title }}">{{ library_panel.scores_title }}</span>
+          <nav class="folder-breadcrumb hidden" data-folder-breadcrumb aria-label="Folder path"></nav>
           <span class="files-pane-count" data-filter-count></span>
         </div>
         {% include "partials/scores_pane_actions.html" %}

@@ -1,12 +1,35 @@
 <nav class="folder-tree-pane" aria-label="Folders">
   <ul class="folder-tree">
-    {% for folder in library_panel.lib.folders if folder.id == 'root' %}
-      {% include "partials/folder_tree_item.html" %}
-    {% endfor %}
-    {% for folder in library_panel.lib.folders if folder.id != 'root' %}
-      {% with is_child=true %}
-        {% include "partials/folder_tree_item.html" %}
-      {% endwith %}
-    {% endfor %}
+    {% macro render_folder(folder, depth) %}
+    <li class="folder-tree-item drop-target"
+        data-drop-kind="folder"
+        data-folder-id="{{ folder.id }}"
+        data-depth="{{ depth }}"
+        data-library-ctx="{{ library_panel.library_ctx }}">
+      <div class="folder-tree-row">
+        <a class="folder-tree-link{% if folder.id == 'root' %} active{% endif %}"
+           data-folder-id="{{ folder.id }}"
+           style="--folder-depth: {{ depth }}"
+           href="#">
+          <span class="folder-tree-icon" aria-hidden="true">📁</span>
+          <span class="folder-tree-name">{{ folder.name }}</span>
+        </a>
+        {% if library_panel.can_manage_folders and folder.id != 'root' %}
+        <button type="button" class="btn-icon btn-icon-sm delete-folder-btn"
+                data-folder-id="{{ folder.id }}"
+                data-library-ctx="{{ library_panel.library_ctx }}"
+                title="Delete folder">×</button>
+        {% endif %}
+      </div>
+      {% if folder.children %}
+      <ul class="folder-tree-children">
+        {% for child in folder.children %}
+          {{ render_folder(child, depth + 1) }}
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+    {% endmacro %}
+    {{ render_folder(library_panel.folder_tree, 0) }}
   </ul>
 </nav>

@@ -47,14 +47,16 @@ PASSWORD_ENCRYPT_PREFIX = "enc:"
 SCORE_ID_PREFIX = "s-"
 MAIN_CONTENT_HASH_META_KEY = "main_content_hash"
 FILE_HASH_READ_BYTES = 65536
+BYTES_PER_SIZE_UNIT = 1024
+SIZE_UNIT_LABELS = ("B", "KB", "MB", "GB", "TB")
 SCORE_TITLE_COLLISION_MSG = "A score with this title already exists"
 UNSAFE_PATH_CHAR_PATTERN = re.compile(r'[/\\:*?"<>|\0]')
 WHITESPACE_PATTERN = re.compile(r"\s+")
 MULTI_SEP_PATTERN = re.compile(r"[-_]+")
 SCORE_LEGACY_HASH_PATTERN = re.compile(r"^s-[a-f0-9]{12}$")
 USER_LEGACY_HASH_PATTERN = re.compile(r"^u-[a-f0-9]{12}$")
-FOLDER_LEGACY_HASH_PATTERN = re.compile(r"^fld-[a-f0-9]{12}$")
 FILE_LEGACY_HASH_PATTERN = re.compile(r"^f-[a-f0-9]{12}$")
+FOLDER_PARENT_KEY = "parent_id"
 LEGACY_STORED_NAME_PATTERN = re.compile(r"^[a-f0-9]{32}\.[a-z0-9]+$", re.I)
 
 _locks: dict[str, threading.Lock] = {}
@@ -190,6 +192,43 @@ def ensure_data_dirs() -> None:
     LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def format_byte_size(num_bytes: int) -> str:
+    size = float(max(num_bytes, 0))
+    unit_index = 0
+    last_index = len(SIZE_UNIT_LABELS) - 1
+    while size >= BYTES_PER_SIZE_UNIT and unit_index < last_index:
+        size /= BYTES_PER_SIZE_UNIT
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(size)} {SIZE_UNIT_LABELS[unit_index]}"
+    return f"{size:.1f} {SIZE_UNIT_LABELS[unit_index]}"
+
+
+def data_dir_size_bytes() -> int:
+    if not DATA_DIR.exists():
+        return 0
+    total = 0
+    for root, _dirs, files in os.walk(DATA_DIR):
+        for name in files:
+            try:
+                total += (Path(root) / name).stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def disk_usage_stats() -> dict:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    used_bytes = data_dir_size_bytes()
+    _total, _fs_used, free_bytes = shutil.disk_usage(DATA_DIR)
+    return {
+        "used_bytes": used_bytes,
+        "free_bytes": free_bytes,
+        "used_label": format_byte_size(used_bytes),
+        "free_label": format_byte_size(free_bytes),
+    }
+
+
 _migrations_done = False
 
 
@@ -232,6 +271,8 @@ def _normalize_libraries() -> None:
         if lib.pop("file_aliases", None) is not None:
             changed = True
         if _prune_library_stale_scores(lib):
+            changed = True
+        if normalize_library_folders(lib):
             changed = True
         if changed:
             save_library(library_id, lib)
@@ -332,29 +373,7 @@ def _migrate_library_file(lib_path: Path, user_map: dict[str, str], score_map: d
     library_id = lib_path.stem
     lib = _read_json(lib_path, default_library(library_id))
     changed = lib.pop("file_aliases", None) is not None
-    folder_map: dict[str, str] = {}
-    taken_folders = {ROOT_FOLDER_ID}
-    for folder in lib.get("folders", []):
-        fid = folder["id"]
-        if fid == ROOT_FOLDER_ID:
-            continue
-        if FOLDER_LEGACY_HASH_PATTERN.match(fid) or " " in fid:
-            new_fid = unique_id(folder["name"], taken_folders)
-            taken_folders.add(new_fid)
-            if new_fid != fid:
-                folder["id"] = new_fid
-                folder_map[fid] = new_fid
-                changed = True
-        else:
-            name_slug = _slug(folder["name"])
-            if fid != name_slug and (fid.startswith(f"{name_slug}_") or fid.startswith(f"{name_slug}-")):
-                if name_slug not in taken_folders:
-                    folder_map[fid] = name_slug
-                    folder["id"] = name_slug
-                    fid = name_slug
-                    changed = True
-            taken_folders.add(fid)
-    if _remap_library_score_refs(lib, score_map, folder_map):
+    if _remap_library_score_refs(lib, score_map, {}):
         changed = True
     new_library_id = user_map.get(library_id, library_id)
     if new_library_id != library_id:
@@ -620,8 +639,109 @@ def find_score_by_main_content_hash(digest: str) -> dict | None:
     return None
 
 
-def folder_id_from_name(name: str, folders: list[dict]) -> str:
-    return unique_id(name, {f["id"] for f in folders})
+def folder_by_id(lib: dict, folder_id: str) -> dict | None:
+    for folder in lib.get("folders", []):
+        if folder["id"] == folder_id:
+            return folder
+    return None
+
+
+def folder_parent_id(folder: dict) -> str:
+    return folder.get(FOLDER_PARENT_KEY, ROOT_FOLDER_ID)
+
+
+def sibling_folder_ids(lib: dict, parent_id: str) -> set[str]:
+    return {
+        folder["id"] for folder in lib.get("folders", [])
+        if folder["id"] != ROOT_FOLDER_ID and folder_parent_id(folder) == parent_id
+    }
+
+
+def folder_id_from_name(name: str, sibling_ids: set[str]) -> str:
+    return unique_id(name, sibling_ids)
+
+
+def normalize_library_folders(lib: dict) -> bool:
+    folders = lib.get("folders", [])
+    changed = False
+    if not folders:
+        lib["folders"] = [{"id": ROOT_FOLDER_ID, "name": ROOT_FOLDER_DISPLAY_NAME}]
+        return True
+    folder_ids = {folder["id"] for folder in folders}
+    if ROOT_FOLDER_ID not in folder_ids:
+        folders.insert(0, {"id": ROOT_FOLDER_ID, "name": ROOT_FOLDER_DISPLAY_NAME})
+        folder_ids.add(ROOT_FOLDER_ID)
+        changed = True
+    for folder in folders:
+        if folder["id"] == ROOT_FOLDER_ID:
+            if folder.pop(FOLDER_PARENT_KEY, None) is not None:
+                changed = True
+            continue
+        parent_id = folder.get(FOLDER_PARENT_KEY, ROOT_FOLDER_ID)
+        if FOLDER_PARENT_KEY not in folder:
+            folder[FOLDER_PARENT_KEY] = ROOT_FOLDER_ID
+            changed = True
+        elif parent_id not in folder_ids or parent_id == folder["id"]:
+            folder[FOLDER_PARENT_KEY] = ROOT_FOLDER_ID
+            changed = True
+    return changed
+
+
+def build_folder_tree(lib: dict) -> dict:
+    normalize_library_folders(lib)
+    nodes = {folder["id"]: {**folder, "children": []} for folder in lib.get("folders", [])}
+    for folder in lib.get("folders", []):
+        if folder["id"] == ROOT_FOLDER_ID:
+            continue
+        parent = nodes.get(folder_parent_id(folder))
+        if parent is not None:
+            parent["children"].append(nodes[folder["id"]])
+    root = nodes[ROOT_FOLDER_ID]
+
+    def sort_children(node: dict) -> None:
+        node["children"].sort(key=lambda child: (child.get("name") or "").lower())
+        for child in node["children"]:
+            sort_children(child)
+
+    sort_children(root)
+    return root
+
+
+def create_folder(library_id: str, name: str, parent_id: str = ROOT_FOLDER_ID) -> dict:
+    lib = load_library(library_id)
+    parent_id = parent_id or ROOT_FOLDER_ID
+    if not folder_by_id(lib, parent_id):
+        raise ValueError("Unknown parent folder")
+    folder = {
+        "id": folder_id_from_name(name, sibling_folder_ids(lib, parent_id)),
+        "name": name,
+        FOLDER_PARENT_KEY: parent_id,
+    }
+    lib["folders"].append(folder)
+    save_library(library_id, lib)
+    return folder
+
+
+def delete_folder(library_id: str, folder_id: str) -> None:
+    lib = load_library(library_id)
+    if folder_id == ROOT_FOLDER_ID:
+        raise ValueError("Cannot delete root folder")
+    folder = folder_by_id(lib, folder_id)
+    if not folder:
+        raise ValueError("Unknown folder")
+    parent_id = folder_parent_id(folder)
+    for child in lib.get("folders", []):
+        if child["id"] != ROOT_FOLDER_ID and folder_parent_id(child) == folder_id:
+            child[FOLDER_PARENT_KEY] = parent_id
+    for score_id, assigned_id in list(lib.get("score_folders", {}).items()):
+        if assigned_id == folder_id:
+            lib["score_folders"][score_id] = parent_id
+    lib["folders"] = [entry for entry in lib["folders"] if entry["id"] != folder_id]
+    save_library(library_id, lib)
+
+
+def library_folder_ids(lib: dict) -> set[str]:
+    return {folder["id"] for folder in lib.get("folders", [])}
 
 
 def user_id_from_username(username: str) -> str:
@@ -800,8 +920,7 @@ def sync_library_metadata(library_id: str, lib: dict) -> bool:
 
 def load_library(library_id: str) -> dict:
     lib = _read_json(library_path(library_id), default_library(library_id))
-    if not lib.get("folders"):
-        lib["folders"] = [{"id": ROOT_FOLDER_ID, "name": ROOT_FOLDER_DISPLAY_NAME}]
+    normalize_library_folders(lib)
     for key in ("score_folders", "score_order"):
         lib.setdefault(key, {} if key != "score_order" else [])
     return lib
@@ -1462,10 +1581,6 @@ def folder_label(lib: dict, folder_id: str) -> str:
         if folder["id"] == folder_id:
             return folder["name"]
     return folder_id
-
-
-def custom_folders(lib: dict) -> list[dict]:
-    return [folder for folder in lib.get("folders", []) if folder["id"] != ROOT_FOLDER_ID]
 
 
 def _scores_from_order(order: list[str], query: str, tag: str | None) -> list[dict]:

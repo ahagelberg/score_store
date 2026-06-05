@@ -5,6 +5,7 @@
   const VIEW_LIST = "list";
   const VIEW_FOLDER = "folder";
   const ROOT_FOLDER_ID = "root";
+  const FOLDER_PARENT_KEY = "parent_id";
   const LAYOUT_PARAM_KEYS = ["view", "folder", "user_folder"];
 
   function loadLayout() {
@@ -58,16 +59,79 @@
     workspace.dataset.scoreIds = JSON.stringify(ids);
   }
 
-  function updatePaneTitle(workspace, viewMode, folderId) {
+  function parseFolders(workspace) {
+    try {
+      return JSON.parse(workspace.dataset.folders || "[]");
+    } catch {
+      return [];
+    }
+  }
+
+  function folderById(folders, folderId) {
+    return folders.find((folder) => folder.id === folderId) || null;
+  }
+
+  function folderPath(folders, folderId) {
+    const path = [];
+    let currentId = folderId;
+    while (currentId && currentId !== ROOT_FOLDER_ID) {
+      const folder = folderById(folders, currentId);
+      if (!folder) break;
+      path.unshift(folder);
+      currentId = folder[FOLDER_PARENT_KEY] || ROOT_FOLDER_ID;
+    }
+    return path;
+  }
+
+  function updateFolderBreadcrumb(workspace, viewMode, folderId) {
+    const breadcrumb = workspace.querySelector("[data-folder-breadcrumb]");
     const titleEl = workspace.querySelector(".files-pane-title");
-    if (!titleEl) return;
+    if (!breadcrumb || !titleEl) return;
     const defaultTitle = titleEl.dataset.defaultTitle || titleEl.textContent;
-    if (viewMode !== VIEW_FOLDER) {
+    if (viewMode !== VIEW_FOLDER || folderId === ROOT_FOLDER_ID) {
+      breadcrumb.replaceChildren();
+      breadcrumb.classList.add("hidden");
+      titleEl.classList.remove("hidden");
       titleEl.textContent = defaultTitle;
       return;
     }
-    const folderName = workspace.querySelector(`.folder-tree-link[data-folder-id="${folderId}"] .folder-tree-name`)?.textContent;
-    titleEl.textContent = folderName || defaultTitle;
+    const segments = folderPath(parseFolders(workspace), folderId);
+    if (segments.length === 0) {
+      breadcrumb.replaceChildren();
+      breadcrumb.classList.add("hidden");
+      titleEl.classList.remove("hidden");
+      titleEl.textContent = defaultTitle;
+      return;
+    }
+    titleEl.classList.add("hidden");
+    breadcrumb.classList.remove("hidden");
+    breadcrumb.replaceChildren();
+    segments.forEach((folder, index) => {
+      if (index > 0) {
+        const sep = document.createElement("span");
+        sep.className = "folder-breadcrumb-sep";
+        sep.textContent = "/";
+        sep.setAttribute("aria-hidden", "true");
+        breadcrumb.appendChild(sep);
+      }
+      if (index < segments.length - 1) {
+        const link = document.createElement("a");
+        link.className = "folder-breadcrumb-link";
+        link.href = "#";
+        link.dataset.folderId = folder.id;
+        link.textContent = folder.name;
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          setFolder(workspace, folder.id, loadLayout());
+        });
+        breadcrumb.appendChild(link);
+      } else {
+        const current = document.createElement("span");
+        current.className = "folder-breadcrumb-current";
+        current.textContent = folder.name;
+        breadcrumb.appendChild(current);
+      }
+    });
   }
 
   function setActiveFolderLink(workspace, folderId) {
@@ -101,7 +165,7 @@
     });
     setActiveFolderLink(workspace, folderId);
     setDropFolderIds(workspace, folderId);
-    updatePaneTitle(workspace, viewMode, folderId);
+    updateFolderBreadcrumb(workspace, viewMode, folderId);
     applyFolderFilter(workspace, viewMode, folderId);
   }
 
@@ -112,8 +176,12 @@
     const viewMode = workspace.dataset.libraryView || VIEW_LIST;
     setActiveFolderLink(workspace, folderId);
     setDropFolderIds(workspace, folderId);
-    updatePaneTitle(workspace, viewMode, folderId);
+    updateFolderBreadcrumb(workspace, viewMode, folderId);
     applyFolderFilter(workspace, viewMode, folderId);
+  }
+
+  function folderIdForWorkspace(workspace) {
+    return storedFolderId(loadLayout(), workspace);
   }
 
   function bindWorkspace(workspace, layout) {
@@ -168,7 +236,15 @@
     if (options?.choirReset) initChoirReset(options.root);
   }
 
-  window.LibraryLayout = { init, syncScoreIdsForWorkspace: syncScoreIds, refreshWorkspace, loadLayout, saveLayout, STORAGE_KEY };
+  window.LibraryLayout = {
+    init,
+    syncScoreIdsForWorkspace: syncScoreIds,
+    refreshWorkspace,
+    loadLayout,
+    saveLayout,
+    folderIdForWorkspace,
+    STORAGE_KEY,
+  };
   document.addEventListener("DOMContentLoaded", () => {
     const root = document.getElementById("library-root");
     const maestroRoot = document.getElementById("maestro-root");
