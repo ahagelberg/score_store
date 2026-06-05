@@ -9,13 +9,15 @@
     data-folder-id="{{ library_panel.folder_id }}"
     data-can-edit="{{ 'true' if can_edit|default(false) else 'false' }}"
     data-hard-delete="{{ 'true' if can_hard_delete|default(false) else 'false' }}"
-    {% if library_panel.draggable_score %}data-drag-score="true"{% endif %}>
+    {% if library_panel.draggable_score %}data-drag-score="true"{% endif %}
+    {% if score.id and score_main %}data-preview-pdf-url="{{ url_for('serve_file', score_id=score.id, stored_name=score_main.stored_name) }}"{% endif %}>
   <div class="score-summary{% if score.id %} score-summary-clickable{% endif %}" data-score-summary{% if library_panel.draggable_score %} draggable="true"{% endif %}>
     <div class="score-summary-main">
       <span class="score-aux-icon{% if not aux_files|default([]) %} score-aux-icon-empty{% endif %}" data-score-aux-indicator aria-hidden="true" title="Additional files">{% include "partials/icon_paperclip.svg.html" %}</span>
       <div class="score-summary-text">
         <span class="score-summary-title">{{ score.title|default('New score') }}</span>
-        {% if score.composer %}<span class="score-summary-composer">{{ score.composer }}</span>{% endif %}
+        {% set subtitle = score_subtitle_line(score) %}
+        {% if subtitle %}<span class="score-summary-composer">{{ subtitle }}</span>{% endif %}
       </div>
       {% if not score_main %}<span class="score-badge-warn">No main PDF</span>{% endif %}
     </div>
@@ -69,6 +71,12 @@
           <label>Composer</label>
           <input class="form-control" type="text" name="composer" data-field="composer" value="{{ score.composer|default('') }}">
         </div>
+        {% if can_edit_year|default(false) %}
+        <div class="form-group">
+          <label>Year</label>
+          <input class="form-control" type="text" name="year" data-field="year" value="{{ score.year|default('') }}" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="e.g. 2024">
+        </div>
+        {% endif %}
         <div class="form-group">
           <label>Arranger</label>
           <input class="form-control" type="text" name="arranger" data-field="arranger" value="{{ score.arranger|default('') }}">

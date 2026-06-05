@@ -51,7 +51,14 @@
     function applyFilter() {
       const q = input ? input.value.trim().toLowerCase() : "";
       let visible = 0;
+      let visibleFolders = 0;
       if (list) {
+        list.querySelectorAll(".folder-list-entry").forEach((row) => {
+          const name = (row.dataset.filterName || row.querySelector(".folder-list-name")?.textContent || "").toLowerCase();
+          const show = !q || name.includes(q);
+          row.classList.toggle("filter-hidden", !show);
+          if (show) visibleFolders += 1;
+        });
         list.querySelectorAll(".score-accordion").forEach((item) => {
           const text = (item.dataset.filterText || "").toLowerCase();
           const tags = (item.dataset.filterTags || "").split(",").filter(Boolean);
@@ -71,7 +78,7 @@
         });
       }
       if (countEl) countEl.textContent = visible ? `(${visible})` : "";
-      if (emptyEl) emptyEl.classList.toggle("hidden", visible > 0);
+      if (emptyEl) emptyEl.classList.toggle("hidden", visible > 0 || visibleFolders > 0);
       if (clearBtn) clearBtn.classList.toggle("hidden", !q);
       if (window.LibraryLayout?.syncScoreIdsForWorkspace) {
         window.LibraryLayout.syncScoreIdsForWorkspace(workspace);

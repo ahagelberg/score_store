@@ -722,10 +722,23 @@
     nextBtn.dataset.targetId = nav.next_id || "";
   }
 
+  function scoreSubtitleLine(score) {
+    if (score.subtitle) return score.subtitle;
+    const composer = (score.composer || "").trim();
+    const year = (score.year || "").trim();
+    if (composer && year) return `${composer} (${year})`;
+    if (composer) return composer;
+    if (year) return `(${year})`;
+    return "";
+  }
+
   function renderTitle(score) {
-    let text = score.title || "Score";
-    if (score.composer) text += ` — ${score.composer}`;
-    titleEl.textContent = text;
+    titleEl.textContent = score.title || "Score";
+    const subtitleEl = document.getElementById("score-viewer-subtitle");
+    if (!subtitleEl) return;
+    const subtitle = scoreSubtitleLine(score);
+    subtitleEl.textContent = subtitle;
+    subtitleEl.classList.toggle("hidden", !subtitle);
   }
 
   function renderDownload(downloadUrl) {

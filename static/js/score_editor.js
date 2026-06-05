@@ -7,11 +7,20 @@
   const ICON_PRINT = `<svg class="icon-print" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>`;
   const ICON_PAPERCLIP = `<svg class="icon-paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
 
+  function syncEditorPreview(item) {
+    if (item.classList.contains("score-accordion-expanded")) {
+      window.ScoreEditorPreview?.sync?.(item);
+    } else {
+      window.ScoreEditorPreview?.clear?.(item);
+    }
+  }
+
   function setAccordionExpanded(item, expanded) {
     item.classList.toggle("score-accordion-expanded", expanded);
     item.classList.toggle("score-accordion-collapsed", !expanded);
     const editor = item.querySelector("[data-score-editor]");
     if (editor) editor.classList.toggle("hidden", !expanded);
+    syncEditorPreview(item);
   }
 
   function setAccordionMode(item, mode) {
@@ -103,10 +112,20 @@
     return data;
   }
 
+  function scoreSubtitleLine(score) {
+    const composer = (score.composer || "").trim();
+    const year = (score.year || "").trim();
+    if (composer && year) return `${composer} (${year})`;
+    if (composer) return composer;
+    if (year) return `(${year})`;
+    return "";
+  }
+
   function summaryFilterText(score) {
     return [
       score.title || "",
       score.composer || "",
+      score.year || "",
       score.arranger || "",
       score.description || "",
       (score.tags || []).join(" "),
@@ -150,13 +169,14 @@
     const mainEl = item.querySelector(".score-summary-main");
     let composerEl = item.querySelector(".score-summary-composer");
     if (mainEl) {
-      if (score.composer) {
+      const subtitle = scoreSubtitleLine(score);
+      if (subtitle) {
         if (!composerEl) {
           composerEl = document.createElement("span");
           composerEl.className = "score-summary-composer";
           titleEl.insertAdjacentElement("afterend", composerEl);
         }
-        composerEl.textContent = score.composer;
+        composerEl.textContent = subtitle;
         composerEl.classList.remove("hidden");
       } else if (composerEl) {
         composerEl.remove();
@@ -244,6 +264,11 @@
     </div>`;
   }
 
+  function previewPdfUrl(scoreId, mainFile) {
+    if (!scoreId || !mainFile?.stored_name) return "";
+    return `/files/${encodeURIComponent(scoreId)}/${encodeURIComponent(mainFile.stored_name)}`;
+  }
+
   function buildAuxFileHtml(file) {
     return `<li class="aux-file-item" draggable="true" data-file-id="${escapeHtml(file.id)}" data-drag-kind="aux">
       <span class="aux-file-icon" aria-hidden="true">📄</span>
@@ -263,8 +288,13 @@
     const tagsJson = JSON.stringify(score.tags || []);
     const filterText = summaryFilterText(score);
     const filterTags = (score.tags || []).join(",");
-    const composerHtml = score.composer
-      ? `<span class="score-summary-composer">${escapeHtml(score.composer)}</span>`
+    const subtitle = scoreSubtitleLine(score);
+    const composerHtml = subtitle
+      ? `<span class="score-summary-composer">${escapeHtml(subtitle)}</span>`
+      : "";
+    const canEditYear = opts.canEditYear === true;
+    const yearFieldHtml = canEditYear
+      ? `<div class="form-group"><label>Year</label><input class="form-control" type="text" data-field="year" value="${escapeHtml(score.year || "")}" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="e.g. 2024"></div>`
       : "";
     const noMainBadge = mainFile ? "" : `<span class="score-badge-warn">No main PDF</span>`;
     const tagChips = (score.tags || []).map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("");
@@ -288,6 +318,8 @@
     if (draggable) {
       li.dataset.dragScore = "true";
     }
+    const previewUrl = previewPdfUrl(score.id, mainFile);
+    if (previewUrl) li.dataset.previewPdfUrl = previewUrl;
     const summaryDragAttr = draggable ? ' draggable="true"' : "";
     const deleteLabel = hardDelete ? "Delete" : "Remove";
     li.innerHTML = `
@@ -310,35 +342,36 @@
         </div>
       </div>
       <div class="score-editor${expanded ? "" : " hidden"}" data-score-editor>
-        <div class="score-section" data-section="details">
-          <div class="score-section-header" data-section-toggle><span>Details</span><span>−</span></div>
-          <div class="score-section-body">
-            <div class="form-group"><label>Title *</label><input class="form-control" type="text" data-field="title" value="${escapeHtml(score.title || "")}" required></div>
-            <div class="form-group"><label>Composer</label><input class="form-control" type="text" data-field="composer" value="${escapeHtml(score.composer || "")}"></div>
-            <div class="form-group"><label>Arranger</label><input class="form-control" type="text" data-field="arranger" value="${escapeHtml(score.arranger || "")}"></div>
-            <div class="form-group"><label>Description</label><textarea class="form-control" data-field="description">${escapeHtml(score.description || "")}</textarea></div>
-            <div class="form-group"><label>Tags</label>
-              <div class="tag-field" data-tag-field><input type="hidden" name="tags" value="${escapeHtml(tagsJson)}"><div class="tag-chip-list" data-tag-list></div><input class="tag-field-input" data-tag-input placeholder="Add tag…"></div>
-            </div>
-            ${mainFile ? buildFilenameFieldHtml(mainFile.id, mainFile.name, mainFile.stored_name) : ""}
-          </div>
-        </div>
-        <div class="score-section" data-section="aux">
-          <div class="score-section-header" data-section-toggle><span>Additional files</span><span>−</span></div>
-          <div class="score-section-body">
-            <button type="button" class="btn btn-sm add-youtube-btn">+ YouTube</button>
-            <div class="aux-files">
-              <ul class="aux-file-list" data-aux-list>${auxFiles.map(buildAuxFileHtml).join("")}</ul>
-              <div class="aux-drop-zone drop-target aux-drop-zone-active" data-drop-kind="aux" data-score-id="${escapeHtml(score.id)}">
-                <p class="aux-drop-hint">Drop files here to add</p>
+            <div class="score-section" data-section="details">
+              <div class="score-section-header" data-section-toggle><span>Details</span><span>−</span></div>
+              <div class="score-section-body">
+                <div class="form-group"><label>Title *</label><input class="form-control" type="text" data-field="title" value="${escapeHtml(score.title || "")}" required></div>
+                <div class="form-group"><label>Composer</label><input class="form-control" type="text" data-field="composer" value="${escapeHtml(score.composer || "")}"></div>
+                ${yearFieldHtml}
+                <div class="form-group"><label>Arranger</label><input class="form-control" type="text" data-field="arranger" value="${escapeHtml(score.arranger || "")}"></div>
+                <div class="form-group"><label>Description</label><textarea class="form-control" data-field="description">${escapeHtml(score.description || "")}</textarea></div>
+                <div class="form-group"><label>Tags</label>
+                  <div class="tag-field" data-tag-field><input type="hidden" name="tags" value="${escapeHtml(tagsJson)}"><div class="tag-chip-list" data-tag-list></div><input class="tag-field-input" data-tag-input placeholder="Add tag…"></div>
+                </div>
+                ${mainFile ? buildFilenameFieldHtml(mainFile.id, mainFile.name, mainFile.stored_name) : ""}
               </div>
             </div>
-          </div>
-        </div>
-        <div class="score-editor-actions">
-          <button type="button" class="btn score-cancel-btn">Cancel</button>
-          <button type="button" class="btn btn-primary score-save-btn">Save</button>
-        </div>
+            <div class="score-section" data-section="aux">
+              <div class="score-section-header" data-section-toggle><span>Additional files</span><span>−</span></div>
+              <div class="score-section-body">
+                <button type="button" class="btn btn-sm add-youtube-btn">+ YouTube</button>
+                <div class="aux-files">
+                  <ul class="aux-file-list" data-aux-list>${auxFiles.map(buildAuxFileHtml).join("")}</ul>
+                  <div class="aux-drop-zone drop-target aux-drop-zone-active" data-drop-kind="aux" data-score-id="${escapeHtml(score.id)}">
+                    <p class="aux-drop-hint">Drop files here to add</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="score-editor-actions">
+              <button type="button" class="btn score-cancel-btn">Cancel</button>
+              <button type="button" class="btn btn-primary score-save-btn">Save</button>
+            </div>
       </div>`;
     return li;
   }
@@ -378,13 +411,24 @@
     return data;
   }
 
+  function canEditYearFromList(list) {
+    const workspace = list?.closest(".library-workspace");
+    return workspace?.dataset.canEditYear === "true";
+  }
+
   function replaceAccordionFromScore(item, score, libraryCtx, folderId) {
     const expanded = item.classList.contains("score-accordion-expanded");
     const accordionMode = item.dataset.accordionMode || null;
     const draggable = item.dataset.dragScore === "true";
     const hardDelete = item.dataset.hardDelete !== "false";
     const parent = item.parentNode;
-    const newItem = buildScoreAccordion(score, libraryCtx, folderId, { expanded, draggable, hardDelete });
+    const list = item.closest(".score-list");
+    const newItem = buildScoreAccordion(score, libraryCtx, folderId, {
+      expanded,
+      draggable,
+      hardDelete,
+      canEditYear: canEditYearFromList(list),
+    });
     if (accordionMode) setAccordionMode(newItem, accordionMode);
     parent.replaceChild(newItem, item);
     bindAccordion(newItem);
@@ -401,6 +445,7 @@
       expanded,
       draggable,
       hardDelete: opts.hardDelete,
+      canEditYear: opts.canEditYear ?? canEditYearFromList(list),
     });
     list.insertBefore(item, list.firstChild);
     bindAccordion(item);
@@ -727,7 +772,12 @@
 
   function initExisting() {
     bindEscapeToCloseEdit();
-    document.querySelectorAll(".score-accordion").forEach(bindAccordion);
+    document.querySelectorAll(".score-accordion").forEach((item) => {
+      bindAccordion(item);
+      if (item.classList.contains("score-accordion-expanded")) {
+        window.ScoreEditorPreview?.sync?.(item);
+      }
+    });
     if (window.TagInput) window.TagInput.initAll(document);
   }
 

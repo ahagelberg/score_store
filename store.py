@@ -50,6 +50,9 @@ FILE_HASH_READ_BYTES = 65536
 BYTES_PER_SIZE_UNIT = 1024
 SIZE_UNIT_LABELS = ("B", "KB", "MB", "GB", "TB")
 SCORE_TITLE_COLLISION_MSG = "A score with this title already exists"
+SCORE_YEAR_PATTERN = re.compile(r"^\d{4}$")
+SCORE_YEAR_MIN = 1000
+SCORE_YEAR_MAX = 9999
 UNSAFE_PATH_CHAR_PATTERN = re.compile(r'[/\\:*?"<>|\0]')
 WHITESPACE_PATTERN = re.compile(r"\s+")
 MULTI_SEP_PATTERN = re.compile(r"[-_]+")
@@ -1094,6 +1097,30 @@ def normalize_tags(tags) -> list[str]:
     return out
 
 
+def normalize_year(value) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if not SCORE_YEAR_PATTERN.match(raw):
+        raise ValueError("Year must be a four-digit number")
+    year_num = int(raw)
+    if year_num < SCORE_YEAR_MIN or year_num > SCORE_YEAR_MAX:
+        raise ValueError(f"Year must be between {SCORE_YEAR_MIN} and {SCORE_YEAR_MAX}")
+    return raw
+
+
+def score_subtitle_line(meta: dict) -> str:
+    composer = (meta.get("composer") or "").strip()
+    year = (meta.get("year") or "").strip()
+    if composer and year:
+        return f"{composer} ({year})"
+    if composer:
+        return composer
+    if year:
+        return f"({year})"
+    return ""
+
+
 def normalize_metadata(data: dict) -> dict:
     title = (data.get("title") or "").strip()
     if not title:
@@ -1300,6 +1327,7 @@ def create_score_from_upload(
     meta = {
         "id": score_id,
         **meta_fields,
+        "year": "",
         "owner_id": owner_id,
         MAIN_CONTENT_HASH_META_KEY: content_hash,
         "files": files,
@@ -1311,11 +1339,13 @@ def create_score_from_upload(
     return meta
 
 
-def update_score_metadata(score_id: str, metadata: dict) -> dict:
+def update_score_metadata(score_id: str, metadata: dict, *, allow_year: bool = False) -> dict:
     meta = load_score_meta(score_id)
     if not meta:
         raise ValueError("Score not found")
     fields = normalize_metadata(metadata)
+    if allow_year:
+        fields["year"] = normalize_year(metadata.get("year"))
     meta.update(fields)
     meta.pop("type", None)
     validate_score_files(meta.get("files", []))
@@ -1497,6 +1527,7 @@ def split_file_to_new_score(
     new_meta = {
         "id": new_score_id,
         **meta_fields,
+        "year": "",
         "owner_id": owner_id,
         MAIN_CONTENT_HASH_META_KEY: content_hash,
         "files": [new_file],
@@ -1560,6 +1591,7 @@ def score_matches_filter(meta: dict, query: str, tag: str | None) -> bool:
     parts = [
         meta.get("title", ""),
         meta.get("composer", ""),
+        meta.get("year", ""),
         meta.get("arranger", ""),
         meta.get("description", ""),
         " ".join(meta.get("tags", [])),

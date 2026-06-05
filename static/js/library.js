@@ -14,6 +14,22 @@
     el.classList.toggle("drop-target-active", on);
   }
 
+  function dropScope(el) {
+    return el.closest("#maestro-root, #library-root") || document;
+  }
+
+  function clearDropActive(scope) {
+    scope.querySelectorAll(".drop-target-active").forEach((node) => {
+      node.classList.remove("drop-target-active");
+    });
+  }
+
+  function bindDropActiveClear() {
+    if (document.body.dataset.dropActiveClearBound) return;
+    document.body.dataset.dropActiveClearBound = "true";
+    document.addEventListener("dragend", () => clearDropActive(document));
+  }
+
   function userIdFromLibraryCtx(libraryCtx) {
     if (!libraryCtx?.startsWith(USER_LIBRARY_CTX_PREFIX)) return null;
     return libraryCtx.slice(USER_LIBRARY_CTX_PREFIX.length);
@@ -241,9 +257,12 @@
     }
   }
 
-  function bindDropTargets(root) {
-    root.querySelectorAll(".drop-target").forEach((el) => {
-      el.addEventListener("dragover", (e) => {
+  function bindDropTarget(el) {
+    if (el.dataset.dropBound === "true") return;
+    el.dataset.dropBound = "true";
+    bindDropActiveClear();
+    const scope = dropScope(el);
+    el.addEventListener("dragover", (e) => {
         if (dropTargetFrom(e.target) !== el) return;
         const hasFiles = e.dataTransfer.types.includes("Files");
         const hasScore = e.dataTransfer.types.includes(SCORE_DRAG_MIME);
@@ -251,6 +270,7 @@
         if (!hasFiles && !hasScore && !hasInternal) return;
         e.preventDefault();
         e.stopPropagation();
+        clearDropActive(scope);
         setDropActive(el, true);
       });
       el.addEventListener("dragleave", (e) => {
@@ -262,12 +282,15 @@
         if (dropTargetFrom(e.target) !== el) return;
         e.preventDefault();
         e.stopPropagation();
-        setDropActive(el, false);
+        clearDropActive(scope);
         const payload = parseDragData(e);
         const files = getFilesFromEvent(e);
         await handleFileDrop(el, files, payload, e.dataTransfer);
       });
-    });
+  }
+
+  function bindDropTargets(root) {
+    root.querySelectorAll(".drop-target").forEach(bindDropTarget);
   }
 
   function bindUploadButtons(root) {
@@ -319,7 +342,7 @@
     });
   }
 
-  window.LibraryDrop = { bindDropTargets };
+  window.LibraryDrop = { bindDropTargets, bindDropTarget };
 
   document.addEventListener("DOMContentLoaded", () => {
     const root = document.getElementById("library-root") || document.getElementById("maestro-root");
@@ -332,17 +355,22 @@
     if (assignPanel) {
       assignPanel.classList.add("drop-target");
       assignPanel.dataset.dropKind = "assign";
+      const assignScope = dropScope(assignPanel);
       assignPanel.addEventListener("dragover", (e) => {
         if (e.dataTransfer.types.includes(SCORE_DRAG_MIME)) {
           e.preventDefault();
+          clearDropActive(assignScope);
           assignPanel.classList.add("drop-target-active");
         }
       });
-      assignPanel.addEventListener("dragleave", () => assignPanel.classList.remove("drop-target-active"));
+      assignPanel.addEventListener("dragleave", (e) => {
+        if (assignPanel.contains(e.relatedTarget)) return;
+        assignPanel.classList.remove("drop-target-active");
+      });
       assignPanel.addEventListener("drop", async (e) => {
         if (dropTargetFrom(e.target) !== assignPanel) return;
         e.preventDefault();
-        assignPanel.classList.remove("drop-target-active");
+        clearDropActive(assignScope);
         const scoreId = e.dataTransfer.getData(SCORE_DRAG_MIME);
         const userId = assignPanel.dataset.maestroAssignUser;
         if (!scoreId || !userId) return;

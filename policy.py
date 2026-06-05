@@ -54,6 +54,10 @@ def user_can_edit_score(user: dict, meta: dict) -> bool:
     return meta.get("owner_id") == user["id"]
 
 
+def user_can_edit_score_year(user: dict) -> bool:
+    return is_maestro(user)
+
+
 def user_can_view_score(user: dict, meta: dict, library_id: str) -> bool:
     """Whether user may view score in the given library browsing context."""
     if is_maestro(user):

@@ -10,7 +10,10 @@
         <span class="viewer-score-nav-pos" id="score-viewer-pos"></span>
         <button type="button" class="btn btn-sm viewer-score-nav-btn" id="score-viewer-next" aria-label="Next score">›</button>
       </div>
-      <span class="viewer-title" id="score-viewer-title"></span>
+      <div class="viewer-heading">
+        <span class="viewer-title" id="score-viewer-title"></span>
+        <span class="viewer-subtitle hidden" id="score-viewer-subtitle"></span>
+      </div>
       <span class="viewer-pdf-page-nav hidden" id="score-viewer-pdf-page" aria-live="polite"></span>
       <button type="button" class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-pdf-scroll-mode" aria-label="Switch scroll mode" title="Scroll mode">
         <span class="viewer-icon-pdf-scroll-vertical hidden">{% include "partials/icon_pdf_scroll_vertical.svg.html" %}</span>

@@ -10,7 +10,9 @@
     <nav class="score-view-header-nav">
       <a class="header-link score-view-back" href="{{ back_url }}">← Back to library</a>
     </nav>
-    <h1 class="score-view-heading">{{ score.title }}{% if score.composer %} — {{ score.composer }}{% endif %}</h1>
+    <h1 class="score-view-heading">{{ score.title }}</h1>
+    {% set subtitle = score_subtitle_line(score) %}
+    {% if subtitle %}<p class="score-view-subtitle">{{ subtitle }}</p>{% endif %}
   </header>
   <noscript>
     <div class="score-view-fallback">

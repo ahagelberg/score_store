@@ -40,7 +40,7 @@
         <div class="workspace-scores">
           <ul class="score-list" id="mobile-score-list">
             {% for score in scores %}
-            {% set filter_text = [score.title, score.composer, score.arranger, score.description, score.tags|default([])|join(' ')] | select | join(' ') %}
+            {% set filter_text = [score.title, score.composer, score.year|default(''), score.arranger, score.description, score.tags|default([])|join(' ')] | select | join(' ') %}
             <li class="score-accordion score-accordion-collapsed" data-score-id="{{ score.id }}"
                 data-filter-text="{{ filter_text }}"
                 data-filter-tags="{{ score.tags|default([])|join(',') }}">

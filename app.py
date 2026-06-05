@@ -301,6 +301,16 @@ def user_can_edit_score(user, score):
 
 
 @app.template_global()
+def user_can_edit_score_year(user):
+    return policy.user_can_edit_score_year(user)
+
+
+@app.template_global()
+def score_subtitle_line(score):
+    return store.score_subtitle_line(score)
+
+
+@app.template_global()
 def user_can_hard_delete_score(user, score):
     return policy.user_can_hard_delete_score(user, score)
 
@@ -879,8 +889,10 @@ def score_edit(score_id):
         "description": data.get("description", ""),
         "tags": data.get("tags", "[]"),
     }
+    if policy.user_can_edit_score_year(user):
+        metadata["year"] = data.get("year", "")
     try:
-        meta = store.update_score_metadata(score_id, metadata)
+        meta = store.update_score_metadata(score_id, metadata, allow_year=policy.user_can_edit_score_year(user))
     except ValueError as e:
         return json_error(str(e))
     return jsonify({"ok": True, "score": meta})
@@ -1139,6 +1151,8 @@ def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[
             "id": score_id,
             "title": meta.get("title"),
             "composer": meta.get("composer"),
+            "year": meta.get("year", ""),
+            "subtitle": store.score_subtitle_line(meta),
         },
         "files": files,
         "selected_file_id": selected_file_id,
