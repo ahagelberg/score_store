@@ -77,9 +77,10 @@ def user_can_set_score_folder(user: dict, meta: dict, library_id: str) -> bool:
     return user_can_manage_folders_in_library(user, library_id)
 
 
-def user_can_hard_delete_score(user: dict, meta: dict) -> bool:
+def user_can_hard_delete_score(user: dict, meta: dict, library_id: str | None = None) -> bool:
     if is_maestro(user):
-        return True
+        lib_id = library_id or store.GLOBAL_LIBRARY_ID
+        return lib_id == store.GLOBAL_LIBRARY_ID
     score_id = meta.get("id")
     owner_id = meta.get("owner_id")
     if not score_id or owner_id != user["id"] or owner_id == store.SYSTEM_OWNER_ID:
@@ -94,12 +95,12 @@ def user_can_hard_delete_score(user: dict, meta: dict) -> bool:
 def user_can_remove_score(user: dict, meta: dict, library_id: str | None = None) -> bool:
     if is_maestro(user):
         return True
-    if user_can_hard_delete_score(user, meta):
+    lib_id = library_id or user["id"]
+    if user_can_hard_delete_score(user, meta, lib_id):
         return True
     score_id = meta.get("id")
     if not score_id:
         return False
-    lib_id = library_id or user["id"]
     return store.library_has_score(lib_id, score_id)
 
 

@@ -1568,6 +1568,12 @@ body.score-viewer-open .score-editor-preview-float {
   display: flex;
   align-items: center;
   gap: 2px;
+  border-radius: var(--radius);
+}
+
+.user-list-item.drop-target-active {
+  background: var(--color-accent-bg);
+  outline: 1px solid var(--color-primary);
 }
 
 .user-list-link {

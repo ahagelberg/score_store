@@ -311,8 +311,8 @@ def score_subtitle_line(score):
 
 
 @app.template_global()
-def user_can_hard_delete_score(user, score):
-    return policy.user_can_hard_delete_score(user, score)
+def user_can_hard_delete_score(user, score, library_id=None):
+    return policy.user_can_hard_delete_score(user, score, library_id)
 
 
 @app.template_global()
@@ -1029,12 +1029,14 @@ def score_delete(score_id):
     meta = store.load_score_meta(score_id)
     if not meta:
         return json_error("Not found", 404)
-    if not policy.user_can_remove_score(user, meta, user["id"]):
+    data = request.get_json(silent=True) or {}
+    library_id = data.get("library_id") or user["id"]
+    if not policy.user_can_remove_score(user, meta, library_id):
         abort(403)
-    if policy.user_can_hard_delete_score(user, meta):
+    if policy.user_can_hard_delete_score(user, meta, library_id):
         store.delete_score(score_id)
         return jsonify({"ok": True, "deleted": True})
-    store.remove_score_from_library(user["id"], score_id)
+    store.remove_score_from_library(library_id, score_id)
     return jsonify({"ok": True, "removed": True})
 
 

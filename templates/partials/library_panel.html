@@ -1,5 +1,5 @@
-<div class="desktop-panel{% if library_panel.panel_class %} {{ library_panel.panel_class }}{% endif %}{% if library_panel.assign_user %} maestro-assign-panel{% endif %}"
-     {% if library_panel.assign_user %}data-maestro-assign-user="{{ library_panel.assign_user }}"{% endif %}>
+<div class="desktop-panel{% if library_panel.panel_class %} {{ library_panel.panel_class }}{% endif %}{% if library_panel.assign_user %} maestro-assign-panel drop-target{% endif %}"
+     {% if library_panel.assign_user %}data-maestro-assign-user="{{ library_panel.assign_user }}" data-drop-kind="user" data-user-id="{{ library_panel.assign_user }}"{% endif %}>
   <div class="desktop-panel-header">
     <div class="desktop-panel-header-start">
       <span>{{ library_panel.panel_title }}</span>

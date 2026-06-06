@@ -199,19 +199,33 @@
     return workspaceFrom(el)?.querySelector(".score-list");
   }
 
+  async function assignDroppedScoreToUser(scoreId, userId, folderId, target) {
+    const result = await assignScoreToUser(scoreId, userId, folderId || "root");
+    if (!result) return;
+    insertAssignedScore(userId, result.folderId, result.score, target);
+    showToast("Score assigned");
+  }
+
   async function handleFileDrop(target, files, dragPayload, transfer) {
     const kind = target.dataset.dropKind;
     const libraryCtx = target.dataset.libraryCtx;
     const folderId = target.dataset.folderId || "root";
 
     const scoreDragId = transfer?.getData(SCORE_DRAG_MIME);
+    if (scoreDragId && kind === "user") {
+      const userId = target.dataset.userId;
+      if (!userId) return;
+      await assignDroppedScoreToUser(scoreDragId, userId, "root", target);
+      return;
+    }
     const assignUserId = userIdFromLibraryCtx(libraryCtx);
     if (scoreDragId && assignUserId && (kind === "library" || kind === "folder")) {
-      const result = await assignScoreToUser(scoreDragId, assignUserId, kind === "folder" ? folderId : "root");
-      if (result) {
-        insertAssignedScore(assignUserId, result.folderId, result.score, target);
-        showToast("Score assigned");
-      }
+      await assignDroppedScoreToUser(
+        scoreDragId,
+        assignUserId,
+        kind === "folder" ? folderId : "root",
+        target,
+      );
       return;
     }
 
@@ -415,36 +429,5 @@
     bindDropTargets(root);
     bindUploadButtons(root);
     bindFolderActions(root);
-
-    const assignPanel = document.querySelector(".maestro-assign-panel[data-maestro-assign-user]");
-    if (assignPanel) {
-      assignPanel.classList.add("drop-target");
-      assignPanel.dataset.dropKind = "assign";
-      const assignScope = dropScope(assignPanel);
-      assignPanel.addEventListener("dragover", (e) => {
-        if (e.dataTransfer.types.includes(SCORE_DRAG_MIME)) {
-          e.preventDefault();
-          clearDropActive(assignScope);
-          assignPanel.classList.add("drop-target-active");
-        }
-      });
-      assignPanel.addEventListener("dragleave", (e) => {
-        if (assignPanel.contains(e.relatedTarget)) return;
-        assignPanel.classList.remove("drop-target-active");
-      });
-      assignPanel.addEventListener("drop", async (e) => {
-        if (dropTargetFrom(e.target) !== assignPanel) return;
-        e.preventDefault();
-        clearDropActive(assignScope);
-        const scoreId = e.dataTransfer.getData(SCORE_DRAG_MIME);
-        const userId = assignPanel.dataset.maestroAssignUser;
-        if (!scoreId || !userId) return;
-        const result = await assignScoreToUser(scoreId, userId, "root");
-        if (result) {
-          insertAssignedScore(userId, result.folderId, result.score, assignPanel);
-          showToast("Score assigned");
-        }
-      });
-    }
   });
 })();

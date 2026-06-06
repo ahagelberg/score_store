@@ -6,6 +6,7 @@
     data-filter-tags="{{ score.tags|default([])|join(',') }}"
     data-mode="{{ mode|default('edit') }}"
     data-library-ctx="{{ library_panel.library_ctx }}"
+    data-library-id="{{ library_panel.lib_id }}"
     data-folder-id="{{ library_panel.folder_id }}"
     data-can-edit="{{ 'true' if can_edit|default(false) else 'false' }}"
     data-hard-delete="{{ 'true' if can_hard_delete|default(false) else 'false' }}"

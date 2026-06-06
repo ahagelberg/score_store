@@ -24,7 +24,7 @@
       <div class="desktop-panel-content">
         <ul class="user-list">
           {% for u in users %}
-          <li class="user-list-item">
+          <li class="user-list-item drop-target" data-drop-kind="user" data-user-id="{{ u.id }}">
             <a class="user-list-link{% if selected_user == u.id %} active{% endif %}"
                href="{{ user_select_url(u.id, query, active_tag) }}">{{ u.display_name }}</a>
             <button type="button" class="btn-icon btn-icon-sm user-edit-btn" data-user-id="{{ u.id }}" data-display-name="{{ u.display_name }}" data-username="{{ u.username }}" data-role="{{ u.role }}" data-password="{{ u|user_password_display|e }}" title="Edit" aria-label="Edit">✎</button>

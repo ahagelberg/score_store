@@ -3,6 +3,8 @@
 
   const DRAG_MIME = "application/x-score-file";
   const ACCORDION_MODE_EDIT = "edit";
+  const GLOBAL_LIBRARY_ID = "_global";
+  const USER_LIBRARY_CTX_PREFIX = "user-";
   const ICON_DOWNLOAD = `<svg class="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`;
   const ICON_PRINT = `<svg class="icon-print" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>`;
   const ICON_PAPERCLIP = `<svg class="icon-paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
@@ -270,6 +272,14 @@
     return `/files/${encodeURIComponent(scoreId)}/${encodeURIComponent(mainFile.stored_name)}`;
   }
 
+  function libraryIdFromCtx(libraryCtx) {
+    if (libraryCtx === "global") return GLOBAL_LIBRARY_ID;
+    if (libraryCtx?.startsWith(USER_LIBRARY_CTX_PREFIX)) {
+      return libraryCtx.slice(USER_LIBRARY_CTX_PREFIX.length);
+    }
+    return libraryCtx;
+  }
+
   function buildAuxFileHtml(file) {
     return `<li class="aux-file-item" draggable="true" data-file-id="${escapeHtml(file.id)}" data-drag-kind="aux">
       <span class="aux-file-icon" aria-hidden="true">📄</span>
@@ -313,6 +323,7 @@
     li.dataset.filterTags = filterTags;
     li.dataset.mode = "edit";
     li.dataset.libraryCtx = libraryCtx;
+    li.dataset.libraryId = opts.libraryId || libraryIdFromCtx(libraryCtx);
     li.dataset.folderId = folderId;
     li.dataset.canEdit = "true";
     li.dataset.hardDelete = hardDelete ? "true" : "false";
@@ -772,9 +783,14 @@
         const hardDelete = item.dataset.hardDelete !== "false";
         const msg = hardDelete
           ? "Delete this score permanently? This removes it for everyone."
-          : "Remove this score from your library? It will remain available elsewhere.";
+          : "Remove this score from this library? It will remain available elsewhere.";
         if (!window.confirm(msg)) return;
-        const res = await Csrf.fetch(`/scores/${deleteBtn.dataset.scoreId}/delete`, { method: "POST" });
+        const libraryId = item.dataset.libraryId || "";
+        const res = await Csrf.fetch(`/scores/${deleteBtn.dataset.scoreId}/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ library_id: libraryId }),
+        });
         if (res.ok) {
           item.remove();
           window.ScoreEditorPreview?.reconcile?.(item);
