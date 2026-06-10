@@ -9,6 +9,10 @@
   const ICON_PRINT = `<svg class="icon-print" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>`;
   const ICON_PAPERCLIP = `<svg class="icon-paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
 
+  function scoreApiPath(scoreId, ...segments) {
+    return `/scores/${[scoreId, ...segments].join("/")}`;
+  }
+
   function syncEditorPreview(item) {
     window.ScoreEditorPreview?.reconcile?.(item);
   }
@@ -269,7 +273,8 @@
 
   function previewPdfUrl(scoreId, mainFile) {
     if (!scoreId || !mainFile?.stored_name) return "";
-    return `/files/${encodeURIComponent(scoreId)}/${encodeURIComponent(mainFile.stored_name)}`;
+    const path = `/files/${scoreId}/${mainFile.stored_name}`;
+    return window.Csrf?.appendScopeParams?.(path) ?? path;
   }
 
   function libraryIdFromCtx(libraryCtx) {
@@ -310,9 +315,9 @@
     const noMainBadge = mainFile ? "" : `<span class="score-badge-warn">No main PDF</span>`;
     const tagChips = (score.tags || []).map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("");
     const summaryActionsHtml = mainFile
-      ? `<a class="btn-icon btn-icon-sm score-view-btn" href="/scores/${encodeURIComponent(score.id)}/view?lib=${encodeURIComponent(libraryCtx)}" data-score-id="${escapeHtml(score.id)}" title="View" aria-label="View">👁</a>
-         <a class="btn-icon btn-icon-sm viewer-header-btn score-download-btn" href="/scores/${escapeHtml(score.id)}/download" title="Download" aria-label="Download">${ICON_DOWNLOAD}</a>
-         <button type="button" class="btn-icon btn-icon-sm score-print-btn" data-print-url="/files/${escapeHtml(score.id)}/${escapeHtml(mainFile.stored_name)}" data-print-media="pdf" title="Print" aria-label="Print">${ICON_PRINT}</button>`
+      ? `<a class="btn-icon btn-icon-sm score-view-btn" href="/scores/${score.id}/view?lib=${encodeURIComponent(libraryCtx)}" data-score-id="${escapeHtml(score.id)}" title="View" aria-label="View">👁</a>
+         <a class="btn-icon btn-icon-sm viewer-header-btn score-download-btn" href="${scoreApiPath(score.id, "download")}" title="Download" aria-label="Download">${ICON_DOWNLOAD}</a>
+         <button type="button" class="btn-icon btn-icon-sm score-print-btn" data-print-url="${previewPdfUrl(score.id, mainFile)}" data-print-media="pdf" title="Print" aria-label="Print">${ICON_PRINT}</button>`
       : "";
     const li = document.createElement("li");
     li.className = `score-accordion drop-target${expanded ? " score-accordion-expanded score-accordion-edit" : " score-accordion-collapsed"}`;
@@ -405,7 +410,7 @@
   }
 
   async function splitToNewScore(srcScoreId, fileId, libraryCtx, folderId, title) {
-    const res = await Csrf.fetch(`/scores/${srcScoreId}/files/${fileId}/split`, {
+    const res = await Csrf.fetch(scoreApiPath(srcScoreId, "files", fileId, "split"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -479,7 +484,7 @@
       showToast("Score not found", true);
       return;
     }
-    const res = await Csrf.fetch(`/scores/${scoreId}/edit`, {
+    const res = await Csrf.fetch(scoreApiPath(scoreId, "edit"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(meta),
@@ -520,7 +525,7 @@
     const stem = input.value.trim();
     if (!stem) return null;
     if (stem === field.dataset.filenameStem) return;
-    const res = await Csrf.fetch(`/scores/${scoreId}/files/${fileId}/name`, {
+    const res = await Csrf.fetch(scoreApiPath(scoreId, "files", fileId, "name"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: stem }),
@@ -617,7 +622,7 @@
   }
 
   async function removeAux(scoreId, fileId, row) {
-    const res = await Csrf.fetch(`/scores/${scoreId}/files/${fileId}/remove`, { method: "POST" });
+    const res = await Csrf.fetch(scoreApiPath(scoreId, "files", fileId, "remove"), { method: "POST" });
     const data = await res.json();
     if (!res.ok) {
       showToast(data.error || "Remove failed", true);
@@ -655,7 +660,7 @@
   async function addAuxFile(scoreId, file, listEl) {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await Csrf.fetch(`/scores/${scoreId}/files`, { method: "POST", body: fd });
+    const res = await Csrf.fetch(scoreApiPath(scoreId, "files"), { method: "POST", body: fd });
     const data = await res.json();
     if (!res.ok) {
       showToast(data.error || "Upload failed", true);
@@ -680,7 +685,7 @@
   async function addYoutube(scoreId, listEl) {
     const info = UploadHelpers.promptYoutube();
     if (!info) return;
-    const res = await Csrf.fetch(`/scores/${scoreId}/files`, {
+    const res = await Csrf.fetch(scoreApiPath(scoreId, "files"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(info),
@@ -786,7 +791,7 @@
           : "Remove this score from this library? It will remain available elsewhere.";
         if (!window.confirm(msg)) return;
         const libraryId = item.dataset.libraryId || "";
-        const res = await Csrf.fetch(`/scores/${deleteBtn.dataset.scoreId}/delete`, {
+        const res = await Csrf.fetch(scoreApiPath(deleteBtn.dataset.scoreId, "delete"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ library_id: libraryId }),
@@ -837,6 +842,7 @@
     replaceAccordionFromScore,
     collapseAllExpanded,
     moveAuxFileInDom,
+    scoreApiPath,
     DRAG_MIME,
   };
 

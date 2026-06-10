@@ -58,13 +58,18 @@
     return Math.min(window.devicePixelRatio || 1, PREVIEW_MAX_OUTPUT_SCALE);
   }
 
+  function scopedFileUrl(url) {
+    return window.Csrf?.appendScopeParams?.(url) ?? url;
+  }
+
   async function loadPdfDocument(url) {
-    const cached = pdfDocCache.get(url);
+    const scoped = scopedFileUrl(url);
+    const cached = pdfDocCache.get(scoped);
     if (cached) return cached;
     const lib = ensurePdfWorker();
     if (!lib) throw new Error("PDF.js unavailable");
-    const pdf = await lib.getDocument({ url, withCredentials: true }).promise;
-    pdfDocCache.set(url, pdf);
+    const pdf = await lib.getDocument({ url: scoped, withCredentials: true }).promise;
+    pdfDocCache.set(scoped, pdf);
     return pdf;
   }
 

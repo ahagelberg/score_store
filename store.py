@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import threading
 import base64
@@ -66,11 +67,15 @@ DEFAULT_MAESTRO_THEME_CSS = """\
 }
 """
 SCORE_ID_PREFIX = "s-"
+FILE_ID_PREFIX = "f-"
+SCORE_RANDOM_ID_BYTES = 6
+FILE_RANDOM_ID_BYTES = 6
+STORED_NAME_RANDOM_BYTES = 16
+SLUG_IDS_MIGRATED_MARKER = ".opaque_ids_migrated"
 MAIN_CONTENT_HASH_META_KEY = "main_content_hash"
 FILE_HASH_READ_BYTES = 65536
 BYTES_PER_SIZE_UNIT = 1024
 SIZE_UNIT_LABELS = ("B", "KB", "MB", "GB", "TB")
-SCORE_TITLE_COLLISION_MSG = "A score with this title already exists"
 SCORE_YEAR_PATTERN = re.compile(r"^\d{4}$")
 SCORE_YEAR_MIN = 1000
 SCORE_YEAR_MAX = 9999
@@ -395,15 +400,6 @@ def _slug(text: str, max_len: int = FILE_NAME_MAX_LEN) -> str:
     return sanitize_stored_stem(text.strip(), max_len)
 
 
-def sanitize_stored_filename(filename: str) -> str:
-    stem, ext = split_filename(filename)
-    stem = sanitize_stored_stem(stem)
-    if ext:
-        ext = sanitize_stored_stem(ext, max_len=20).lower()
-        return f"{stem}.{ext}" if ext else stem
-    return stem
-
-
 def _unique_with_suffix(base: str, taken: set[str]) -> str:
     if base not in taken:
         return base
@@ -417,30 +413,15 @@ def unique_id(label: str, taken: set[str], prefix: str = "") -> str:
     return _unique_with_suffix(f"{prefix}{_slug(label)}", taken)
 
 
-def _unique_basename(stem: str, ext: str, taken: set[str]) -> str:
-    candidate = f"{stem}.{ext}" if ext else stem
-    if candidate not in taken:
-        return candidate
-    n = 2
+def _random_hex_token(nbytes: int) -> str:
+    return secrets.token_hex(nbytes)
+
+
+def _random_hex_id(prefix: str, nbytes: int, taken: set[str]) -> str:
     while True:
-        suffixed = f"{stem}_{n}.{ext}" if ext else f"{stem}_{n}"
-        if suffixed not in taken:
-            return suffixed
-        n += 1
-
-
-def unique_stored_filename(filename: str, files_dir: Path) -> str:
-    stored = sanitize_stored_filename(filename)
-    taken = {p.name for p in files_dir.iterdir() if p.is_file()} if files_dir.exists() else set()
-    if stored not in taken:
-        return stored
-    stem, ext = split_filename(stored)
-    return _unique_basename(stem, ext, taken)
-
-
-def file_id_from_name(filename: str, existing_ids: set[str]) -> str:
-    stem, _ = split_filename(filename)
-    return unique_id(stem, existing_ids)
+        candidate = f"{prefix}{_random_hex_token(nbytes)}"
+        if candidate not in taken:
+            return candidate
 
 
 def _existing_score_dir_names() -> set[str]:
@@ -449,22 +430,111 @@ def _existing_score_dir_names() -> set[str]:
     return {p.name for p in scores_dir().iterdir() if p.is_dir()}
 
 
-def score_id_from_label(label: str) -> str:
-    return unique_id(label, _existing_score_dir_names(), SCORE_ID_PREFIX)
+def new_score_id(taken: set[str] | None = None) -> str:
+    ids = taken if taken is not None else _existing_score_dir_names()
+    return _random_hex_id(SCORE_ID_PREFIX, SCORE_RANDOM_ID_BYTES, ids)
 
 
-def canonical_score_id(label: str) -> str:
-    return f"{SCORE_ID_PREFIX}{_slug(label)}"
+def new_file_id(taken: set[str]) -> str:
+    return _random_hex_id(FILE_ID_PREFIX, FILE_RANDOM_ID_BYTES, taken)
 
 
-def score_storage_exists(score_id: str) -> bool:
-    try:
-        if score_meta_path(score_id).exists():
-            return True
-        path = score_dir(score_id)
-    except ValueError:
+def new_stored_filename(ext: str, files_dir: Path) -> str:
+    ext = (ext or "").strip().lower()
+    taken = {p.name for p in files_dir.iterdir() if p.is_file()} if files_dir.exists() else set()
+    while True:
+        token = _random_hex_token(STORED_NAME_RANDOM_BYTES)
+        name = f"{token}.{ext}" if ext else token
+        if name not in taken:
+            return name
+
+
+def _score_id_needs_migration(score_id: str) -> bool:
+    return not SCORE_LEGACY_HASH_PATTERN.match(score_id)
+
+
+def _file_id_needs_migration(file_id: str) -> bool:
+    return not FILE_LEGACY_HASH_PATTERN.match(file_id)
+
+
+def _stored_name_needs_migration(stored_name: str) -> bool:
+    return not LEGACY_STORED_NAME_PATTERN.match(stored_name)
+
+
+def migrate_opaque_score_ids(maestro_username: str) -> bool:
+    marker = maestro_data_dir(maestro_username) / SLUG_IDS_MIGRATED_MARKER
+    if marker.exists():
         return False
-    return path.exists()
+    prev = current_maestro_data()
+    try:
+        activate_maestro_data(maestro_username)
+        if scores_dir().exists():
+            score_dirs = [p for p in scores_dir().iterdir() if p.is_dir()]
+            taken_ids = {p.name for p in score_dirs if not _score_id_needs_migration(p.name)}
+            score_id_map: dict[str, str] = {}
+            for sdir in score_dirs:
+                old_id = sdir.name
+                if not _score_id_needs_migration(old_id):
+                    continue
+                new_id = _random_hex_id(SCORE_ID_PREFIX, SCORE_RANDOM_ID_BYTES, taken_ids)
+                taken_ids.add(new_id)
+                score_id_map[old_id] = new_id
+            for old_id, new_id in score_id_map.items():
+                shutil.move(str(scores_dir() / old_id), str(scores_dir() / new_id))
+            for sdir in scores_dir().iterdir():
+                if not sdir.is_dir():
+                    continue
+                score_id = sdir.name
+                meta = load_score_meta(score_id)
+                if not meta:
+                    continue
+                meta["id"] = score_id
+                taken_file_ids = {
+                    f["id"] for f in meta.get("files", []) if not _file_id_needs_migration(f["id"])
+                }
+                for entry in meta.get("files", []):
+                    if _file_id_needs_migration(entry["id"]):
+                        new_fid = _random_hex_id(FILE_ID_PREFIX, FILE_RANDOM_ID_BYTES, taken_file_ids)
+                        taken_file_ids.add(new_fid)
+                        entry["id"] = new_fid
+                    stored = entry.get("stored_name")
+                    if not stored or not _stored_name_needs_migration(stored):
+                        continue
+                    ext = extension_of(stored)
+                    files_path = score_files_dir(score_id)
+                    taken_names = {p.name for p in files_path.iterdir() if p.is_file()}
+                    new_stored = new_stored_filename(ext, files_path)
+                    old_path = files_path / stored
+                    if old_path.exists():
+                        old_path.rename(files_path / new_stored)
+                    entry["stored_name"] = new_stored
+                validate_score_files(meta.get("files", []))
+                save_score_meta(score_id, meta)
+            if score_id_map and libraries_dir().exists():
+                for lib_file in libraries_dir().glob("*.json"):
+                    lib = _read_json(lib_file, {})
+                    updated = False
+                    order = lib.get("score_order", [])
+                    new_order = [score_id_map.get(sid, sid) for sid in order]
+                    if new_order != order:
+                        lib["score_order"] = new_order
+                        updated = True
+                    sf = lib.get("score_folders", {})
+                    new_sf = {score_id_map.get(sid, sid): fid for sid, fid in sf.items()}
+                    if new_sf != sf:
+                        lib["score_folders"] = new_sf
+                        updated = True
+                    if updated:
+                        _write_json(lib_file, lib)
+        marker.write_text(utc_now_iso(), encoding="utf-8")
+        return True
+    finally:
+        activate_maestro_data(prev)
+
+
+def migrate_all_opaque_score_ids() -> None:
+    for maestro in get_maestro_accounts():
+        migrate_opaque_score_ids(maestro["username"])
 
 
 def _digest_stream(read_fn) -> str:
@@ -1434,10 +1504,11 @@ def user_library_score_ids(user_id: str) -> list[str]:
 def _write_uploaded_file(score_id: str, upload_file) -> tuple[str, str]:
     dest_dir = score_files_dir(score_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    stored_name = unique_stored_filename(upload_file.filename or "file", dest_dir)
+    ext = extension_of(upload_file.filename or "file")
+    stored_name = new_stored_filename(ext, dest_dir)
     dest = dest_dir / stored_name
     upload_file.save(dest)
-    return stored_name, extension_of(stored_name)
+    return stored_name, ext
 
 
 def create_score_from_upload(
@@ -1457,14 +1528,12 @@ def create_score_from_upload(
         fid = folder_id if folder_id else ROOT_FOLDER_ID
         assign_score_to_folder(library_id, existing["id"], fid)
         return existing
-    score_id = canonical_score_id(meta_fields["title"])
-    if score_storage_exists(score_id):
-        raise ValueError(SCORE_TITLE_COLLISION_MSG)
+    score_id = new_score_id()
     upload_name = upload_file.filename or "score.pdf"
     sdir = score_dir(score_id)
     sdir.mkdir(parents=True, exist_ok=True)
     stored_name, _ = _write_uploaded_file(score_id, upload_file)
-    file_id = file_id_from_name(upload_name, set())
+    file_id = new_file_id(set())
     files = [{
         "id": file_id,
         "role": "main",
@@ -1513,7 +1582,7 @@ def add_aux_file(score_id: str, upload_file) -> dict:
     existing_ids = {f["id"] for f in meta.get("files", [])}
     upload_name = upload_file.filename or "file"
     entry = {
-        "id": file_id_from_name(upload_name, existing_ids),
+        "id": new_file_id(existing_ids),
         "role": "aux",
         "stored_name": stored_name,
         "name": basename_display_name(upload_name),
@@ -1537,7 +1606,7 @@ def add_youtube_aux(score_id: str, url: str, name: str) -> dict:
     display = display[:FILE_NAME_MAX_LEN] or YOUTUBE_DEFAULT_NAME
     existing_ids = {f["id"] for f in meta.get("files", [])}
     entry = {
-        "id": file_id_from_name(display, existing_ids),
+        "id": new_file_id(existing_ids),
         "role": "aux",
         "name": display,
         "media": "youtube",
@@ -1657,24 +1726,22 @@ def split_file_to_new_score(
     if target.get("media") != "pdf":
         raise ValueError("Only PDF can become main score")
     meta_fields = normalize_metadata(metadata)
-    new_score_id = canonical_score_id(meta_fields["title"])
-    if score_storage_exists(new_score_id):
-        raise ValueError(SCORE_TITLE_COLLISION_MSG)
-    score_dir(new_score_id).mkdir(parents=True, exist_ok=True)
-    score_files_dir(new_score_id).mkdir(exist_ok=True)
+    created_id = new_score_id()
+    score_dir(created_id).mkdir(parents=True, exist_ok=True)
+    score_files_dir(created_id).mkdir(exist_ok=True)
     stored = target["stored_name"]
-    _move_blob(src_score_id, stored, new_score_id)
+    _move_blob(src_score_id, stored, created_id)
     src["files"] = [f for f in src["files"] if f["id"] != file_id]
     new_file = {
-        "id": target["id"],
+        "id": new_file_id(set()),
         "role": "main",
         "stored_name": stored,
         "name": target.get("name", "Full score"),
         "media": "pdf",
     }
-    content_hash = _digest_file(stored_file_path(new_score_id, stored))
+    content_hash = _digest_file(stored_file_path(created_id, stored))
     new_meta = {
-        "id": new_score_id,
+        "id": created_id,
         **meta_fields,
         "year": "",
         "owner_id": owner_id,
@@ -1683,10 +1750,10 @@ def split_file_to_new_score(
         "created_at": utc_now_iso(),
     }
     validate_score_files(new_meta["files"])
-    save_score_meta(new_score_id, new_meta)
+    save_score_meta(created_id, new_meta)
     _apply_main_out_rules(src)
     fid = folder_id if folder_id else ROOT_FOLDER_ID
-    assign_score_to_folder(library_id, new_score_id, fid)
+    assign_score_to_folder(library_id, created_id, fid)
     return new_meta
 
 

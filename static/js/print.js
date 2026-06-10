@@ -25,7 +25,8 @@
   async function loadPdfForPrint(url) {
     const lib = ensurePdfJs();
     if (!lib) throw new Error("PDF.js unavailable");
-    return lib.getDocument({ url, withCredentials: true }).promise;
+    const scoped = window.Csrf?.appendScopeParams?.(url) ?? url;
+    return lib.getDocument({ url: scoped, withCredentials: true }).promise;
   }
 
   async function renderPageDataUrl(pdf, pageNum) {

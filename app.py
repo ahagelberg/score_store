@@ -43,6 +43,7 @@ SWIPE_THRESHOLD_PX = 50
 SCORE_VIEW_NAV_KEYS = ("lib", "q", "tag", "user", "maestro", PREVIEW_TOKEN_PARAM)
 LIBRARY_CTX_USER_PREFIX = "user-"
 ADMIN_SCOPE_QUERY_KEYS = ("maestro", "user", "lib")
+REQUEST_SCOPE_QUERY_KEYS = (*ADMIN_SCOPE_QUERY_KEYS, PREVIEW_TOKEN_PARAM)
 NAV_PRESERVE_BY_ENDPOINT = {
     "admin": ("q", "tag", "maestro", "user", "lib"),
     "maestro": ("q", "tag", "user", "lib"),
@@ -96,6 +97,13 @@ def preview_request_active() -> bool:
         return False
     target = store.get_user(preview_uid)
     return bool(target and policy.admin_can_preview_user(admin, target))
+
+
+def preview_mutations_blocked() -> bool:
+    if not preview_request_active():
+        return False
+    target = current_user()
+    return not (target and policy.is_maestro(target))
 
 
 def current_user() -> dict | None:
@@ -520,16 +528,25 @@ def resolve_maestro_brand(user: dict | None) -> dict | None:
 
 
 def scope_query_params() -> dict:
-    params = dict(preview_query_param())
+    params = {}
     if not has_request_context():
         return params
-    user = session_user()
-    if user and policy.is_admin(user):
-        for key in ADMIN_SCOPE_QUERY_KEYS:
-            value = request.args.get(key)
-            if value:
-                params[key] = value
+    for key in REQUEST_SCOPE_QUERY_KEYS:
+        value = request.args.get(key)
+        if value:
+            params[key] = value
     return params
+
+
+def activate_maestro_for_user(user: dict) -> None:
+    if policy.is_maestro(user):
+        store.activate_maestro_data(user["username"])
+        return
+    if user.get("role") in store.SUB_ACCOUNT_ROLES:
+        try:
+            store.activate_maestro_data(store.maestro_folder_username(user))
+        except ValueError:
+            pass
 
 
 def append_scope_query_params(url: str) -> str:
@@ -662,18 +679,22 @@ def csrf_token():
 
 _bootstrap_done = False
 _legacy_migration_done = False
+_opaque_ids_migration_done = False
 _SETUP_EXEMPT = frozenset({"setup", "static", "login"})
 
 
 @app.before_request
 def _setup_and_bootstrap():
-    global _bootstrap_done, _legacy_migration_done
+    global _bootstrap_done, _legacy_migration_done, _opaque_ids_migration_done
     if request.endpoint in _SETUP_EXEMPT:
         return
     if not _legacy_migration_done:
         store.reload_data_dir_from_instance()
         store.migrate_legacy_flat_layout()
         _legacy_migration_done = True
+    if not _opaque_ids_migration_done:
+        store.migrate_all_opaque_score_ids()
+        _opaque_ids_migration_done = True
     if store.env_bootstrap_configured() and not _bootstrap_done:
         store.bootstrap_admin(password_secret())
         _bootstrap_done = True
@@ -688,23 +709,20 @@ def _setup_and_bootstrap():
 def _activate_maestro_data_scope():
     if request.endpoint in _SETUP_EXEMPT:
         return
-    user = current_user()
-    if not user:
+    actor = session_user()
+    if not actor:
         return
-    role = user.get("role", "")
-    if role == store.ADMIN_ROLE:
+    if policy.is_admin(actor):
         maestro_param = request.args.get("maestro", "").strip().lower()
-        if maestro_param and policy.admin_can_view_maestro(user, maestro_param):
+        if maestro_param and policy.admin_can_view_maestro(actor, maestro_param):
             store.activate_maestro_data(maestro_param)
+            return
+        if preview_request_active():
+            target = current_user()
+            if target:
+                activate_maestro_for_user(target)
         return
-    if role == store.MAESTRO_ROLE:
-        store.activate_maestro_data(user["username"])
-        return
-    if role in store.SUB_ACCOUNT_ROLES:
-        try:
-            store.activate_maestro_data(store.maestro_folder_username(user))
-        except ValueError:
-            pass
+    activate_maestro_for_user(actor)
 
 
 @app.before_request
@@ -713,7 +731,7 @@ def _block_preview_mutations():
         return
     if request.endpoint in _SETUP_EXEMPT or request.endpoint == "static":
         return
-    if preview_request_active():
+    if preview_mutations_blocked():
         abort(403)
 
 
@@ -1812,6 +1830,7 @@ def score_view(score_id):
 if __name__ == "__main__":
     store.reload_data_dir_from_instance()
     store.migrate_legacy_flat_layout()
+    store.migrate_all_opaque_score_ids()
     if not store.needs_setup():
         store.bootstrap_admin(password_secret())
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=os.environ.get("FLASK_DEBUG") == "1")

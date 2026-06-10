@@ -84,8 +84,8 @@
     });
     const qs = params.toString();
     const url = qs
-      ? `/scores/${encodeURIComponent(scoreId)}/view?${qs}`
-      : `/scores/${encodeURIComponent(scoreId)}/view`;
+      ? `/scores/${scoreId}/view?${qs}`
+      : `/scores/${scoreId}/view`;
     window.history.replaceState(null, "", url);
     page.dataset.scoreId = scoreId;
   }
@@ -97,8 +97,8 @@
     params.delete("view_score");
     const qs = params.toString();
     const url = qs
-      ? `/scores/${encodeURIComponent(viewScore)}/view?${qs}`
-      : `/scores/${encodeURIComponent(viewScore)}/view`;
+      ? `/scores/${viewScore}/view?${qs}`
+      : `/scores/${viewScore}/view`;
     window.location.replace(url);
     return true;
   }

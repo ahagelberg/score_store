@@ -236,11 +236,14 @@
     }
 
     if (scoreDragId && kind === "folder" && libraryCtx) {
-      const res = await Csrf.fetch(`/library/${libraryCtx}/scores/${scoreDragId}/folder`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder_id: folderId }),
-      });
+      const res = await Csrf.fetch(
+        `/library/${libraryCtx}/scores/${scoreDragId}/folder`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder_id: folderId }),
+        },
+      );
       if (res.ok) {
         updateScoreFolderInDom(scoreDragId, folderId, target);
         showToast("Score moved");
@@ -264,11 +267,14 @@
     if (dragPayload && dragPayload.scoreId && kind === "aux") {
       const toScore = target.dataset.scoreId || target.closest("[data-score-id]")?.dataset.scoreId;
       if (!toScore || toScore === dragPayload.scoreId) return;
-      const res = await Csrf.fetch(`/scores/${dragPayload.scoreId}/files/${dragPayload.fileId}/move`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to_score_id: toScore }),
-      });
+      const res = await Csrf.fetch(
+        window.ScoreEditor.scoreApiPath(dragPayload.scoreId, "files", dragPayload.fileId, "move"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to_score_id: toScore }),
+        },
+      );
       if (!res.ok) {
         const data = await res.json();
         showToast(data.error || "Move failed", true);
