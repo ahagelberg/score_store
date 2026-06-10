@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block body %}
+{% set header_extra_nav %}
+<button type="button" class="header-link" id="admin-password-btn">Password</button>
+{% endset %}
+{% include "partials/site_header.html" %}
+<div class="admin-layout" id="admin-root">
+  <div class="admin-col admin-col-tree">
+    {% with panel_title="Maestros", user_tree=user_tree, tree_ctx=tree_ctx, query=query, active_tag=active_tag %}
+      {% include "partials/user_tree_panel.html" %}
+    {% endwith %}
+  </div>
+  <div class="admin-col admin-col-library">
+    {% include "partials/library_slot.html" %}
+  </div>
+</div>
+{% include "partials/maestro_dialog.html" %}
+{% include "partials/maestro_password_dialog.html" %}
+{% include "partials/score_viewer_overlay.html" %}
+{% endblock %}
+{% block scripts %}
+{% include "partials/library_scripts.html" %}
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

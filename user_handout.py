@@ -38,6 +38,7 @@ def user_role_label(role: str) -> str:
 
 
 def handout_context(user: dict, site_url: str, app_title: str, password_plain: str) -> dict:
+    login_url = f"{site_url.rstrip('/')}/login"
     return {
         "app_title": app_title,
         "display_name": user.get("display_name", ""),
@@ -46,6 +47,7 @@ def handout_context(user: dict, site_url: str, app_title: str, password_plain: s
         "password": password_plain,
         "password_available": bool(password_plain),
         "site_url": site_url,
+        "login_url": login_url,
     }
 
 
@@ -115,7 +117,7 @@ def build_handout_pdf(context: dict) -> tuple[bytes, str]:
     pdf.ln(2)
     pdf.set_font(PDF_FONT_NAME, "", PDF_BODY_SIZE)
     steps = [
-        f"1. Open {context['site_url']} in your web browser.",
+        f"1. Open {context['login_url']} in your web browser.",
         f"2. Enter username “{context['username']}” and your password.",
         "3. Open your assigned scores from your library.",
     ]

@@ -1,12 +1,6 @@
 {% extends "base.html" %}
 {% block body %}
-<header class="site-header">
-  <h1>{{ app_title }}</h1>
-  <nav>
-    <span class="user-label">{{ current_user.display_name }}</span>
-    <a class="header-link" href="{{ url_for('logout') }}">Logout</a>
-  </nav>
-</header>
+{% include "partials/site_header.html" %}
 <div class="library-page" id="library-root"
      data-library-ctx="{{ library_panel.library_ctx }}"
      data-is-choir="{{ 'true' if is_choir else 'false' }}"
@@ -16,13 +10,5 @@
 {% include "partials/score_viewer_overlay.html" %}
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='vendor/pdfjs/pdf.min.js') }}"></script>
-<script src="{{ url_for('static', filename='js/library_layout.js') }}"></script>
-<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
-<script src="{{ url_for('static', filename='js/print.js') }}"></script>
-<script src="{{ url_for('static', filename='js/viewer.js') }}"></script>
-<script src="{{ url_for('static', filename='js/score_editor_preview.js') }}"></script>
-<script src="{{ url_for('static', filename='js/score_editor.js') }}"></script>
-<script src="{{ url_for('static', filename='js/filter.js') }}"></script>
-<script src="{{ url_for('static', filename='js/library.js') }}"></script>
+{% include "partials/library_scripts.html" %}
 {% endblock %}

@@ -1,0 +1,27 @@
+{% if preview_mode %}
+<div class="preview-banner">
+  <span>Admin preview: {{ preview_user.display_name }} ({{ preview_user.role }})</span>
+  <a class="preview-banner-link" href="{{ url_for('admin') }}">Exit preview</a>
+</div>
+{% endif %}
+<header class="site-header">
+  <div class="site-header-brand">
+    {% if maestro_brand and maestro_brand.logotype_url %}
+    <img class="site-logotype" src="{{ maestro_brand.logotype_url }}" alt="">
+    {% endif %}
+    {% if maestro_brand %}
+      {% if maestro_brand.show_site_title and maestro_brand.site_title %}
+      <h1 class="site-header-title">{{ maestro_brand.site_title }}</h1>
+      {% endif %}
+    {% else %}
+    <h1 class="site-header-title">{{ app_title }}</h1>
+    {% endif %}
+  </div>
+  <nav>
+    {% if header_extra_nav %}{{ header_extra_nav }}{% endif %}
+    {% if current_user and not preview_mode %}
+    <span class="user-label">{{ current_user.display_name }}</span>
+    <a class="header-link" href="{{ url_for('logout') }}">Logout</a>
+    {% endif %}
+  </nav>
+</header>

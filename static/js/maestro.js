@@ -12,7 +12,7 @@
       pw.required = false;
       if (isMaestro) {
         pw.value = "";
-        hint.textContent = "Admin passwords are not stored for viewing";
+        hint.textContent = "Encrypted passwords are not stored for viewing";
       } else {
         pw.value = user.password || "";
         hint.textContent = user.password
@@ -216,13 +216,6 @@
         if (e.target === overlay) closeDialog();
       });
     }
-
-    document.querySelectorAll(".mobile-share-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const panel = document.querySelector(`[data-share-panel="${btn.dataset.scoreId}"]`);
-        if (panel) panel.classList.toggle("hidden");
-      });
-    });
 
     document.querySelectorAll(".assign-checkbox").forEach((cb) => {
       cb.addEventListener("change", () => {

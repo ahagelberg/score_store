@@ -15,7 +15,13 @@
   }
 
   function dropScope(el) {
-    return el.closest("#maestro-root, #library-root") || document;
+    return el.closest("#maestro-root, #library-root, #admin-root") || document;
+  }
+
+  function pageRoot() {
+    return document.getElementById("library-root")
+      || document.getElementById("maestro-root")
+      || document.getElementById("admin-root");
   }
 
   function clearDropActive(scope) {
@@ -424,7 +430,7 @@
   window.LibraryDrop = { bindDropTargets, bindDropTarget };
 
   document.addEventListener("DOMContentLoaded", () => {
-    const root = document.getElementById("library-root") || document.getElementById("maestro-root");
+    const root = pageRoot();
     if (!root) return;
     bindDropTargets(root);
     bindUploadButtons(root);

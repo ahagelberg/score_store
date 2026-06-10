@@ -454,10 +454,15 @@
     applyScoreFolderToAccordion,
     STORAGE_KEY,
   };
+  function pageRoot() {
+    return document.getElementById("library-root")
+      || document.getElementById("maestro-root")
+      || document.getElementById("admin-root");
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
-    const root = document.getElementById("library-root");
-    const maestroRoot = document.getElementById("maestro-root");
-    if (!root && !maestroRoot) return;
-    init({ choirReset: root?.dataset.isChoir === "true", root: root || maestroRoot });
+    const root = pageRoot();
+    if (!root) return;
+    init({ choirReset: root.dataset.isChoir === "true", root });
   });
 })();

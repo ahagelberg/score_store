@@ -1,5 +1,6 @@
 """Filesystem JSON store for score portal."""
 
+import contextvars
 import hashlib
 import json
 import os
@@ -16,8 +17,17 @@ APP_ROOT = Path(__file__).resolve().parent
 INSTANCE_DIR = APP_ROOT / "instance"
 INSTANCE_CONFIG_PATH = INSTANCE_DIR / "config.json"
 DEFAULT_DATA_DIR_NAME = "data"
-DEFAULT_MAESTRO_USERNAME = "admin"
+DEFAULT_ADMIN_USERNAME = "admin"
+LEGACY_FLAT_MIGRATED_MARKER = ".legacy_flat_migrated"
+LEGACY_FLAT_SCORES_DIRNAME = "scores"
+LEGACY_FLAT_LIBRARIES_DIRNAME = "libraries"
 SETUP_PASSWORD_MIN_LEN = 8
+MAESTRO_CONFIG_FILENAME = "config.json"
+DEFAULT_SHOW_SITE_TITLE = True
+MAESTRO_THEME_FILENAME = "theme.css"
+MAESTRO_ASSETS_DIRNAME = "assets"
+LOGOTYPE_STORED_BASENAME = "logotype"
+LOGOTYPE_EXTENSIONS = frozenset({"png", "jpeg", "jpg", "gif", "webp", "svg"})
 
 MAIN_EXTENSIONS = frozenset({"pdf"})
 AUX_EXTENSIONS = frozenset({
@@ -42,8 +52,19 @@ FILE_NAME_MAX_LEN = 80
 TAG_MAX_LEN = 40
 GLOBAL_LIBRARY_ID = "_global"
 SYSTEM_OWNER_ID = "_system"
+ADMIN_ROLE = "admin"
 MAESTRO_ROLE = "maestro"
 PASSWORD_ENCRYPT_PREFIX = "enc:"
+ROLES_WITH_ENCRYPTED_PASSWORD = frozenset({ADMIN_ROLE, MAESTRO_ROLE})
+SUB_ACCOUNT_ROLES = frozenset({"singer", "choir"})
+DEFAULT_MAESTRO_THEME_CSS = """\
+:root {
+  --color-primary: #8b4513;
+  --color-primary-hover: #6d3610;
+  --color-bg: #faf6f0;
+  --color-accent-bg: #f0e6d8;
+}
+"""
 SCORE_ID_PREFIX = "s-"
 MAIN_CONTENT_HASH_META_KEY = "main_content_hash"
 FILE_HASH_READ_BYTES = 65536
@@ -85,19 +106,59 @@ def _initial_data_dir() -> Path:
 
 DATA_DIR = _initial_data_dir()
 USERS_PATH = DATA_DIR / "users.json"
-SCORES_DIR = DATA_DIR / "scores"
-LIBRARIES_DIR = DATA_DIR / "libraries"
+
+_maestro_data_username: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "maestro_data_username", default=None
+)
+
+
+def activate_maestro_data(maestro_username: str | None) -> None:
+    if maestro_username:
+        _maestro_data_username.set(maestro_username.strip().lower())
+    else:
+        _maestro_data_username.set(None)
+
+
+def current_maestro_data() -> str | None:
+    return _maestro_data_username.get()
+
+
+def require_maestro_data() -> str:
+    username = current_maestro_data()
+    if not username:
+        raise RuntimeError("Maestro data scope not active")
+    return username
+
+
+def maestro_data_dir(maestro_username: str) -> Path:
+    uname = maestro_username.strip().lower()
+    if not uname:
+        raise ValueError("Maestro username is required")
+    return DATA_DIR / uname
+
+
+def scores_dir() -> Path:
+    return maestro_data_dir(require_maestro_data()) / "scores"
+
+
+def libraries_dir() -> Path:
+    return maestro_data_dir(require_maestro_data()) / "libraries"
 
 
 def reconfigure_data_dir(data_dir: Path) -> Path:
     """Point store paths at data_dir (absolute, resolved)."""
-    global DATA_DIR, USERS_PATH, SCORES_DIR, LIBRARIES_DIR
+    global DATA_DIR, USERS_PATH
     resolved = data_dir.expanduser().resolve()
     DATA_DIR = resolved
     USERS_PATH = DATA_DIR / "users.json"
-    SCORES_DIR = DATA_DIR / "scores"
-    LIBRARIES_DIR = DATA_DIR / "libraries"
     return resolved
+
+
+def reload_data_dir_from_instance() -> Path:
+    cfg = _read_instance_config()
+    if cfg.get("data_dir"):
+        return reconfigure_data_dir(Path(cfg["data_dir"]))
+    return DATA_DIR
 
 
 def save_instance_config(data_dir: Path) -> None:
@@ -124,16 +185,75 @@ def default_setup_data_dir_display() -> str:
     return str((APP_ROOT / DEFAULT_DATA_DIR_NAME).resolve())
 
 
-def has_maestro() -> bool:
-    return any(u.get("role") == "maestro" for u in load_users())
+def default_data_dir() -> Path:
+    return (APP_ROOT / DEFAULT_DATA_DIR_NAME).resolve()
+
+
+def legacy_flat_layout_pending() -> bool:
+    marker = DATA_DIR / LEGACY_FLAT_MIGRATED_MARKER
+    if marker.exists():
+        return False
+    scores_root = DATA_DIR / LEGACY_FLAT_SCORES_DIRNAME
+    libraries_root = DATA_DIR / LEGACY_FLAT_LIBRARIES_DIRNAME
+    return scores_root.is_dir() or libraries_root.is_dir()
+
+
+def _pick_legacy_data_maestro(users: list[dict]) -> dict:
+    maestros = [u for u in users if u.get("role") == MAESTRO_ROLE]
+    if not maestros:
+        raise ValueError("No maestro account for legacy data migration")
+    for maestro in maestros:
+        if maestro.get("username", "").strip().lower() != DEFAULT_ADMIN_USERNAME:
+            return maestro
+    return maestros[0]
+
+
+def migrate_legacy_flat_layout() -> bool:
+    """One-shot: move root scores/libraries into a maestro folder and remap users."""
+    if not legacy_flat_layout_pending():
+        return False
+    users = load_users()
+    data_maestro = _pick_legacy_data_maestro(users)
+    uname = data_maestro["username"].strip().lower()
+    ensure_maestro_data_dirs(uname)
+    dest_base = maestro_data_dir(uname)
+    for dirname in (LEGACY_FLAT_SCORES_DIRNAME, LEGACY_FLAT_LIBRARIES_DIRNAME):
+        src = DATA_DIR / dirname
+        if not src.is_dir():
+            continue
+        dest = dest_base / dirname
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.move(str(src), str(dest))
+    changed = False
+    for user in users:
+        un = user.get("username", "").strip().lower()
+        if un == DEFAULT_ADMIN_USERNAME and user.get("role") == MAESTRO_ROLE:
+            user["role"] = ADMIN_ROLE
+            changed = True
+        if user.get("role") in SUB_ACCOUNT_ROLES and not user.get("maestro_id"):
+            user["maestro_id"] = data_maestro["id"]
+            changed = True
+    if changed:
+        save_users(users)
+    if not maestro_config_path(uname).exists():
+        save_maestro_config(uname, default_maestro_config(data_maestro["display_name"]))
+    if not maestro_has_theme(uname):
+        write_default_maestro_theme(uname)
+    (DATA_DIR / LEGACY_FLAT_MIGRATED_MARKER).write_text(utc_now_iso(), encoding="utf-8")
+    return True
+
+
+def has_admin() -> bool:
+    return any(u.get("role") == ADMIN_ROLE for u in load_users())
 
 
 def env_bootstrap_configured() -> bool:
-    return bool(os.environ.get("BOOTSTRAP_MAESTRO_USER") and os.environ.get("BOOTSTRAP_MAESTRO_PASSWORD"))
+    return bool(os.environ.get("BOOTSTRAP_ADMIN_USER") and os.environ.get("BOOTSTRAP_ADMIN_PASSWORD"))
 
 
 def needs_setup() -> bool:
-    if has_maestro():
+    if has_admin():
         return False
     if env_bootstrap_configured():
         return False
@@ -149,17 +269,15 @@ def complete_setup(username: str, password: str, data_dir: Path, secret: str) ->
     resolved = resolve_data_dir(str(data_dir))
     save_instance_config(resolved)
     reconfigure_data_dir(resolved)
-    ensure_data_dirs()
     user = {
         "id": user_id_from_username(uname),
-        "display_name": "Maestro",
+        "display_name": "Admin",
         "username": uname,
-        "role": MAESTRO_ROLE,
+        "role": ADMIN_ROLE,
     }
     set_user_password(user, password, secret)
     users = [user]
     save_users(users)
-    ensure_library(GLOBAL_LIBRARY_ID)
     return user
 
 
@@ -190,9 +308,11 @@ def _write_json(path: Path, data) -> None:
         tmp.replace(path)
 
 
-def ensure_data_dirs() -> None:
-    SCORES_DIR.mkdir(parents=True, exist_ok=True)
-    LIBRARIES_DIR.mkdir(parents=True, exist_ok=True)
+def ensure_maestro_data_dirs(maestro_username: str) -> None:
+    base = maestro_data_dir(maestro_username)
+    (base / "scores").mkdir(parents=True, exist_ok=True)
+    (base / "libraries").mkdir(parents=True, exist_ok=True)
+    (base / MAESTRO_ASSETS_DIRNAME).mkdir(parents=True, exist_ok=True)
 
 
 def format_byte_size(num_bytes: int) -> str:
@@ -207,11 +327,12 @@ def format_byte_size(num_bytes: int) -> str:
     return f"{size:.1f} {SIZE_UNIT_LABELS[unit_index]}"
 
 
-def data_dir_size_bytes() -> int:
-    if not DATA_DIR.exists():
+def maestro_folder_size_bytes(maestro_username: str) -> int:
+    base = maestro_data_dir(maestro_username)
+    if not base.exists():
         return 0
     total = 0
-    for root, _dirs, files in os.walk(DATA_DIR):
+    for root, _dirs, files in os.walk(base):
         for name in files:
             try:
                 total += (Path(root) / name).stat().st_size
@@ -221,8 +342,10 @@ def data_dir_size_bytes() -> int:
 
 
 def disk_usage_stats() -> dict:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    used_bytes = data_dir_size_bytes()
+    maestro_username = require_maestro_data()
+    base = maestro_data_dir(maestro_username)
+    base.mkdir(parents=True, exist_ok=True)
+    used_bytes = maestro_folder_size_bytes(maestro_username)
     _total, _fs_used, free_bytes = shutil.disk_usage(DATA_DIR)
     return {
         "used_bytes": used_bytes,
@@ -232,257 +355,11 @@ def disk_usage_stats() -> dict:
     }
 
 
-_migrations_done = False
-
-
-def run_storage_migrations() -> None:
-    global _migrations_done
-    if _migrations_done:
-        return
-    migrate_storage_ids()
-    normalize_storage()
-    _migrations_done = True
-
-
 def _score_exists(score_id: str) -> bool:
     try:
         return score_meta_path(score_id).exists()
     except ValueError:
         return False
-
-
-def _migrate_assigned_user_ids() -> None:
-    """One-shot startup migration: legacy assigned_user_ids → user library membership."""
-    for sid in list_all_score_ids():
-        meta = _read_json(score_meta_path(sid), {})
-        if "assigned_user_ids" not in meta:
-            continue
-        assigned = meta.pop("assigned_user_ids")
-        save_score_meta(sid, meta)
-        for user_id in assigned:
-            if is_user_library_id(user_id):
-                assign_score_to_folder(user_id, sid, ROOT_FOLDER_ID)
-
-
-def _normalize_libraries() -> None:
-    if not LIBRARIES_DIR.exists():
-        return
-    for lib_path in LIBRARIES_DIR.glob("*.json"):
-        library_id = lib_path.stem
-        lib = _read_json(lib_path, default_library(library_id))
-        changed = sync_library_metadata(library_id, lib)
-        if lib.pop("file_aliases", None) is not None:
-            changed = True
-        if _prune_library_stale_scores(lib):
-            changed = True
-        if normalize_library_folders(lib):
-            changed = True
-        if changed:
-            save_library(library_id, lib)
-
-
-def normalize_storage() -> None:
-    _migrate_assigned_user_ids()
-    _normalize_libraries()
-
-
-def _score_slug_label(meta: dict) -> str:
-    sid = meta.get("id", "")
-    if SCORE_LEGACY_HASH_PATTERN.match(sid):
-        return meta.get("title") or "score"
-    if sid.startswith(SCORE_ID_PREFIX):
-        return sid[len(SCORE_ID_PREFIX):]
-    return meta.get("title") or "score"
-
-
-def _file_slug_label(file_entry: dict) -> str:
-    fid = file_entry.get("id", "")
-    if FILE_LEGACY_HASH_PATTERN.match(fid):
-        return file_entry.get("name") or fid
-    if fid.startswith("f-"):
-        return file_entry.get("name") or fid[2:]
-    return fid or file_entry.get("name") or "file"
-
-
-def _stored_name_needs_fixup(stored_name: str) -> bool:
-    return bool(LEGACY_STORED_NAME_PATTERN.match(stored_name) or " " in stored_name)
-
-
-def _migrate_file_entry(file_entry: dict, files_dir: Path, taken_ids: set[str], taken_names: set[str]) -> bool:
-    changed = False
-    old_id = file_entry.get("id", "")
-    label = _file_slug_label(file_entry)
-    new_id = unique_id(label, taken_ids)
-    taken_ids.add(new_id)
-    if new_id != old_id:
-        file_entry["id"] = new_id
-        changed = True
-    stored = file_entry.get("stored_name")
-    if not stored:
-        return changed
-    if not _stored_name_needs_fixup(stored):
-        taken_names.add(stored)
-        return changed
-    stem, ext = split_filename(stored)
-    if LEGACY_STORED_NAME_PATTERN.match(stored):
-        stem = _slug(file_entry.get("name") or new_id)
-    else:
-        stem = _slug(stem)
-    candidate = f"{stem}.{ext}" if ext else stem
-    new_stored = candidate
-    if new_stored in taken_names:
-        new_stored = _unique_basename(stem, ext, taken_names)
-    taken_names.add(new_stored)
-    src = files_dir / stored
-    dst = files_dir / new_stored
-    if src.exists() and src != dst:
-        if dst.exists():
-            dst.unlink()
-        src.rename(dst)
-    file_entry["stored_name"] = new_stored
-    return True
-
-
-def _remap_library_score_refs(lib: dict, score_map: dict[str, str], folder_map: dict[str, str]) -> bool:
-    changed = False
-    sf = lib.get("score_folders", {})
-    for old_sid in list(sf):
-        new_sid = score_map.get(old_sid, old_sid)
-        fid = sf[old_sid]
-        new_fid = folder_map.get(fid, fid)
-        if new_sid != old_sid:
-            del sf[old_sid]
-            changed = True
-        if new_sid not in sf or sf.get(new_sid) != new_fid:
-            sf[new_sid] = new_fid
-            changed = changed or new_sid != old_sid or new_fid != fid
-    order = lib.get("score_order", [])
-    new_order = []
-    seen = set()
-    for sid in order:
-        mapped = score_map.get(sid, sid)
-        if mapped not in seen:
-            new_order.append(mapped)
-            seen.add(mapped)
-        if mapped != sid:
-            changed = True
-    if new_order != order:
-        lib["score_order"] = new_order
-        changed = True
-    return changed
-
-
-def _migrate_library_file(lib_path: Path, user_map: dict[str, str], score_map: dict[str, str]) -> None:
-    library_id = lib_path.stem
-    lib = _read_json(lib_path, default_library(library_id))
-    changed = lib.pop("file_aliases", None) is not None
-    if _remap_library_score_refs(lib, score_map, {}):
-        changed = True
-    new_library_id = user_map.get(library_id, library_id)
-    if new_library_id != library_id:
-        lib["library_id"] = new_library_id
-        changed = True
-    if is_user_library_id(new_library_id):
-        if lib.get("owner_id") != new_library_id:
-            lib["owner_id"] = new_library_id
-            changed = True
-        user = get_user(new_library_id)
-        expected_name = user["display_name"] if user else new_library_id
-        if lib.get("display_name") != expected_name:
-            lib["display_name"] = expected_name
-            changed = True
-    elif new_library_id == GLOBAL_LIBRARY_ID:
-        if lib.get("display_name") != GLOBAL_LIBRARY_DISPLAY_NAME:
-            lib["display_name"] = GLOBAL_LIBRARY_DISPLAY_NAME
-            changed = True
-    if not changed and new_library_id == library_id:
-        return
-    target = library_path(new_library_id)
-    _write_json(target, lib)
-    if target != lib_path and lib_path.exists():
-        lib_path.unlink()
-
-
-def _migrate_score_dir(old_id: str, new_id: str, user_map: dict[str, str]) -> None:
-    meta = _read_json(score_meta_path(old_id), {})
-    if not meta:
-        return
-    meta["id"] = new_id
-    owner = meta.get("owner_id")
-    if owner in user_map:
-        meta["owner_id"] = user_map[owner]
-    files_dir = score_files_dir(old_id)
-    taken_ids: set[str] = set()
-    taken_names: set[str] = set()
-    file_changed = False
-    for entry in meta.get("files", []):
-        if _migrate_file_entry(entry, files_dir, taken_ids, taken_names):
-            file_changed = True
-    save_score_meta(old_id, meta)
-    if new_id != old_id:
-        dest = score_dir(new_id)
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.move(str(score_dir(old_id)), str(dest))
-        save_score_meta(new_id, meta)
-    elif file_changed:
-        save_score_meta(old_id, meta)
-
-
-def _migrate_score_files_in_place(score_id: str, user_map: dict[str, str]) -> None:
-    meta = _read_json(score_meta_path(score_id), {})
-    if not meta:
-        return
-    changed = False
-    files_dir = score_files_dir(score_id)
-    taken_ids: set[str] = set()
-    taken_names: set[str] = set()
-    for entry in meta.get("files", []):
-        if _migrate_file_entry(entry, files_dir, taken_ids, taken_names):
-            changed = True
-    owner = meta.get("owner_id")
-    if owner in user_map:
-        meta["owner_id"] = user_map[owner]
-        changed = True
-    if changed:
-        save_score_meta(score_id, meta)
-
-
-def migrate_storage_ids() -> None:
-    if not USERS_PATH.exists() and not SCORES_DIR.exists():
-        return
-    users = load_users()
-    user_map: dict[str, str] = {}
-    taken_users: set[str] = set()
-    for user in users:
-        old_id = user["id"]
-        new_id = unique_id(_username_slug(user["username"]), taken_users, USER_LIBRARY_ID_PREFIX)
-        taken_users.add(new_id)
-        if new_id != old_id:
-            user_map[old_id] = new_id
-            user["id"] = new_id
-    if user_map:
-        save_users(users)
-    score_map: dict[str, str] = {}
-    taken_scores: set[str] = set()
-    for sid in list_all_score_ids():
-        meta = _read_json(score_meta_path(sid), {})
-        if not meta:
-            continue
-        label = _score_slug_label(meta)
-        new_sid = unique_id(label, taken_scores, SCORE_ID_PREFIX)
-        taken_scores.add(new_sid)
-        if new_sid != sid:
-            score_map[sid] = new_sid
-    if LIBRARIES_DIR.exists():
-        for lib_path in sorted(LIBRARIES_DIR.glob("*.json")):
-            _migrate_library_file(lib_path, user_map, score_map)
-    for old_sid, new_sid in score_map.items():
-        _migrate_score_dir(old_sid, new_sid, user_map)
-    for sid in list_all_score_ids():
-        if sid in score_map:
-            continue
-        _migrate_score_files_in_place(sid, user_map)
 
 
 def utc_now_iso() -> str:
@@ -567,9 +444,9 @@ def file_id_from_name(filename: str, existing_ids: set[str]) -> str:
 
 
 def _existing_score_dir_names() -> set[str]:
-    if not SCORES_DIR.exists():
+    if not scores_dir().exists():
         return set()
-    return {p.name for p in SCORES_DIR.iterdir() if p.is_dir()}
+    return {p.name for p in scores_dir().iterdir() if p.is_dir()}
 
 
 def score_id_from_label(label: str) -> str:
@@ -761,12 +638,25 @@ def _username_slug(username: str) -> str:
 def _apply_user_id_map(user_map: dict[str, str]) -> None:
     if not user_map:
         return
-    empty_score_map: dict[str, str] = {}
-    if LIBRARIES_DIR.exists():
-        for lib_path in sorted(LIBRARIES_DIR.glob("*.json")):
-            _migrate_library_file(lib_path, user_map, empty_score_map)
+    for old_id, new_id in user_map.items():
+        old_path = library_path(old_id)
+        if not old_path.exists():
+            continue
+        lib = load_library(old_id)
+        lib["library_id"] = new_id
+        if is_user_library_id(new_id):
+            lib["owner_id"] = new_id
+        save_library(new_id, lib)
+        if new_id != old_id and old_path.exists():
+            old_path.unlink()
     for sid in list_all_score_ids():
-        _migrate_score_files_in_place(sid, user_map)
+        meta = load_score_meta(sid)
+        if not meta:
+            continue
+        owner = meta.get("owner_id")
+        if owner in user_map:
+            meta["owner_id"] = user_map[owner]
+            save_score_meta(sid, meta)
 
 
 def rename_user_id(old_id: str, username: str) -> str:
@@ -786,6 +676,14 @@ def score_owner_id(user: dict) -> str:
 
 def is_maestro_role(role: str) -> bool:
     return role == MAESTRO_ROLE
+
+
+def is_admin_role(role: str) -> bool:
+    return role == ADMIN_ROLE
+
+
+def role_uses_encrypted_password(role: str) -> bool:
+    return role in ROLES_WITH_ENCRYPTED_PASSWORD
 
 
 def password_storage_secret() -> str:
@@ -815,7 +713,7 @@ def decrypt_stored_password(stored: str, secret: str) -> str:
 
 
 def set_user_password(user: dict, password: str, secret: str) -> None:
-    if is_maestro_role(user.get("role", "")):
+    if role_uses_encrypted_password(user.get("role", "")):
         user["password"] = encrypt_stored_password(password, secret)
     else:
         user["password"] = password
@@ -825,7 +723,8 @@ def finalize_user_role(user: dict, secret: str) -> None:
     stored = user.get("password")
     if not stored:
         return
-    if is_maestro_role(user.get("role", "")):
+    role = user.get("role", "")
+    if role_uses_encrypted_password(role):
         if not is_encrypted_password(stored):
             user["password"] = encrypt_stored_password(stored, secret)
     elif is_encrypted_password(stored):
@@ -833,7 +732,7 @@ def finalize_user_role(user: dict, secret: str) -> None:
 
 
 def password_for_display(user: dict) -> str:
-    if is_maestro_role(user.get("role", "")):
+    if role_uses_encrypted_password(user.get("role", "")):
         return ""
     stored = user.get("password") or ""
     if is_encrypted_password(stored):
@@ -876,8 +775,258 @@ def get_user_by_username(username: str) -> dict | None:
     return None
 
 
+def get_maestro_accounts() -> list[dict]:
+    return [u for u in load_users() if u.get("role") == MAESTRO_ROLE]
+
+
+def get_users_for_maestro(maestro_user_id: str) -> list[dict]:
+    return [
+        u for u in load_users()
+        if u.get("maestro_id") == maestro_user_id and u.get("role") in SUB_ACCOUNT_ROLES
+    ]
+
+
+def maestro_folder_username(user: dict) -> str:
+    role = user.get("role", "")
+    if role == MAESTRO_ROLE:
+        return user["username"]
+    if role in SUB_ACCOUNT_ROLES:
+        owner = get_user(user.get("maestro_id", ""))
+        if not owner or owner.get("role") != MAESTRO_ROLE:
+            raise ValueError("User has no owning maestro")
+        return owner["username"]
+    raise ValueError("User has no maestro folder")
+
+
+def maestro_config_path(maestro_username: str) -> Path:
+    return maestro_data_dir(maestro_username) / MAESTRO_CONFIG_FILENAME
+
+
+def maestro_theme_path(maestro_username: str) -> Path:
+    return maestro_data_dir(maestro_username) / MAESTRO_THEME_FILENAME
+
+
+def default_maestro_config(display_name: str) -> dict:
+    return {
+        "site_title": display_name,
+        "logotype": "",
+        "show_site_title": DEFAULT_SHOW_SITE_TITLE,
+    }
+
+
+def maestro_header_show_title(cfg: dict, has_logotype: bool) -> bool:
+    if cfg.get("show_site_title", DEFAULT_SHOW_SITE_TITLE):
+        return True
+    return not has_logotype
+
+
+def form_show_site_title_checked(form_value: str | None) -> bool:
+    return form_value == "1"
+
+
+def load_maestro_config(maestro_username: str) -> dict:
+    uname = maestro_username.strip().lower()
+    path = maestro_config_path(uname)
+    if not path.exists():
+        user = get_user_by_username(uname)
+        name = user["display_name"] if user else uname
+        return default_maestro_config(name)
+    cfg = _read_json(path, default_maestro_config(uname))
+    if not cfg.get("site_title"):
+        user = get_user_by_username(uname)
+        cfg["site_title"] = user["display_name"] if user else uname
+    cfg.setdefault("logotype", "")
+    cfg.setdefault("show_site_title", DEFAULT_SHOW_SITE_TITLE)
+    return cfg
+
+
+def save_maestro_config(maestro_username: str, config: dict) -> None:
+    uname = maestro_username.strip().lower()
+    ensure_maestro_data_dirs(uname)
+    payload = {
+        "site_title": (config.get("site_title") or "").strip(),
+        "logotype": (config.get("logotype") or "").strip(),
+        "show_site_title": bool(config.get("show_site_title", DEFAULT_SHOW_SITE_TITLE)),
+    }
+    if not payload["site_title"]:
+        user = get_user_by_username(uname)
+        payload["site_title"] = user["display_name"] if user else uname
+    _write_json(maestro_config_path(uname), payload)
+
+
+def maestro_has_theme(maestro_username: str) -> bool:
+    return maestro_theme_path(maestro_username).is_file()
+
+
+def write_default_maestro_theme(maestro_username: str) -> None:
+    uname = maestro_username.strip().lower()
+    ensure_maestro_data_dirs(uname)
+    dest = maestro_theme_path(uname)
+    template = APP_ROOT / "templates" / "maestro_theme_template.css"
+    if template.is_file():
+        shutil.copy(template, dest)
+    else:
+        dest.write_text(DEFAULT_MAESTRO_THEME_CSS, encoding="utf-8")
+
+
+def maestro_logotype_path(maestro_username: str) -> Path | None:
+    cfg = load_maestro_config(maestro_username)
+    rel = cfg.get("logotype", "")
+    if not rel:
+        return None
+    base = maestro_data_dir(maestro_username) / MAESTRO_ASSETS_DIRNAME
+    path = (maestro_data_dir(maestro_username) / rel).resolve()
+    _assert_path_under_base(path, base.resolve())
+    if not path.is_file():
+        return None
+    ext = extension_of(path.name)
+    if ext not in LOGOTYPE_EXTENSIONS:
+        return None
+    return path
+
+
+def maestro_stats(maestro_username: str) -> dict:
+    uname = maestro_username.strip().lower()
+    maestro_user = get_user_by_username(uname)
+    if not maestro_user or maestro_user.get("role") != MAESTRO_ROLE:
+        raise ValueError("Unknown maestro")
+    prev = current_maestro_data()
+    try:
+        activate_maestro_data(uname)
+        score_count = len(list_all_score_ids())
+        disk_bytes = maestro_folder_size_bytes(uname)
+        sub_accounts = get_users_for_maestro(maestro_user["id"])
+        singer_count = sum(1 for u in sub_accounts if u.get("role") == "singer")
+        choir_count = sum(1 for u in sub_accounts if u.get("role") == "choir")
+        return {
+            "score_count": score_count,
+            "disk_bytes": disk_bytes,
+            "disk_label": format_byte_size(disk_bytes),
+            "singer_count": singer_count,
+            "choir_count": choir_count,
+            "sub_account_count": len(sub_accounts),
+        }
+    finally:
+        activate_maestro_data(prev)
+
+
+def create_maestro_account(display_name: str, username: str, password: str, secret: str) -> dict:
+    uname = username.strip().lower()
+    if not uname:
+        raise ValueError("Username is required")
+    if get_user_by_username(uname):
+        raise ValueError("Username taken")
+    if maestro_data_dir(uname).exists():
+        raise ValueError("Maestro folder exists")
+    uid = user_id_from_username(uname)
+    user = {
+        "id": uid,
+        "display_name": display_name.strip() or uname,
+        "username": uname,
+        "role": MAESTRO_ROLE,
+    }
+    set_user_password(user, password, secret)
+    users = load_users()
+    users.append(user)
+    save_users(users)
+    ensure_maestro_data_dirs(uname)
+    save_maestro_config(uname, default_maestro_config(user["display_name"]))
+    write_default_maestro_theme(uname)
+    prev = current_maestro_data()
+    try:
+        activate_maestro_data(uname)
+        ensure_library(GLOBAL_LIBRARY_ID)
+    finally:
+        activate_maestro_data(prev)
+    return user
+
+
+def delete_maestro_account(maestro_user_id: str) -> None:
+    user = get_user(maestro_user_id)
+    if not user or user.get("role") != MAESTRO_ROLE:
+        raise ValueError("Maestro not found")
+    uname = user["username"]
+    prev = current_maestro_data()
+    try:
+        activate_maestro_data(uname)
+        for sub in list(get_users_for_maestro(maestro_user_id)):
+            delete_user(sub["id"])
+    finally:
+        activate_maestro_data(prev)
+    users = [u for u in load_users() if u["id"] != maestro_user_id]
+    save_users(users)
+    folder = maestro_data_dir(uname)
+    if folder.exists():
+        shutil.rmtree(folder)
+
+
+def rename_maestro_folder(old_username: str, new_username: str) -> None:
+    old = old_username.strip().lower()
+    new = new_username.strip().lower()
+    if old == new:
+        return
+    src = maestro_data_dir(old)
+    dst = maestro_data_dir(new)
+    if not src.exists():
+        raise ValueError("Maestro folder not found")
+    if dst.exists():
+        raise ValueError("Target maestro folder exists")
+    src.rename(dst)
+
+
+def create_sub_account(
+    display_name: str,
+    username: str,
+    password: str,
+    role: str,
+    maestro_user_id: str,
+    secret: str,
+) -> dict:
+    if role not in SUB_ACCOUNT_ROLES:
+        raise ValueError("Invalid role")
+    uname = username.strip().lower()
+    if not uname:
+        raise ValueError("Username is required")
+    if get_user_by_username(uname):
+        raise ValueError("Username taken")
+    uid = user_id_from_username(uname)
+    user = {
+        "id": uid,
+        "display_name": display_name.strip() or uname,
+        "username": uname,
+        "role": role,
+        "maestro_id": maestro_user_id,
+    }
+    set_user_password(user, password, secret)
+    users = load_users()
+    users.append(user)
+    save_users(users)
+    ensure_library(uid)
+    return user
+
+
+def bootstrap_admin(secret: str) -> dict | None:
+    username = os.environ.get("BOOTSTRAP_ADMIN_USER", "").strip().lower()
+    password = os.environ.get("BOOTSTRAP_ADMIN_PASSWORD", "")
+    if not username or not password:
+        return None
+    if has_admin():
+        return None
+    user = {
+        "id": user_id_from_username(username),
+        "display_name": "Admin",
+        "username": username,
+        "role": ADMIN_ROLE,
+    }
+    set_user_password(user, password, secret)
+    users = load_users()
+    users.append(user)
+    save_users(users)
+    return user
+
+
 def library_path(library_id: str) -> Path:
-    return LIBRARIES_DIR / f"{library_id}.json"
+    return libraries_dir() / f"{library_id}.json"
 
 
 def is_user_library_id(library_id: str) -> bool:
@@ -954,7 +1103,7 @@ def _prune_library_stale_scores(lib: dict) -> bool:
 
 def score_library_ids(score_id: str) -> list[str]:
     ids = []
-    for lib_file in LIBRARIES_DIR.glob("*.json"):
+    for lib_file in libraries_dir().glob("*.json"):
         library_id = lib_file.stem
         if library_has_score(library_id, score_id):
             ids.append(library_id)
@@ -992,7 +1141,7 @@ def _reject_path_segments(value: str, label: str) -> str:
 
 def validate_score_id(score_id: str) -> str:
     score_id = _reject_path_segments(score_id, "score id")
-    _assert_path_under_base(SCORES_DIR / score_id, SCORES_DIR)
+    _assert_path_under_base(scores_dir() / score_id, scores_dir())
     return score_id
 
 
@@ -1002,7 +1151,7 @@ def validate_stored_name(stored_name: str) -> str:
 
 def score_dir(score_id: str) -> Path:
     score_id = validate_score_id(score_id)
-    return SCORES_DIR / score_id
+    return scores_dir() / score_id
 
 
 def score_files_dir(score_id: str) -> Path:
@@ -1028,9 +1177,9 @@ def save_score_meta(score_id: str, meta: dict) -> None:
 
 
 def list_all_score_ids() -> list[str]:
-    if not SCORES_DIR.exists():
+    if not scores_dir().exists():
         return []
-    return [p.name for p in SCORES_DIR.iterdir() if p.is_dir() and (p / "meta.json").exists()]
+    return [p.name for p in scores_dir().iterdir() if p.is_dir() and (p / "meta.json").exists()]
 
 
 def extension_of(filename: str) -> str:
@@ -1543,8 +1692,8 @@ def split_file_to_new_score(
 
 def delete_score(score_id: str) -> None:
     validate_score_id(score_id)
-    if LIBRARIES_DIR.exists():
-        for lib_file in LIBRARIES_DIR.glob("*.json"):
+    if libraries_dir().exists():
+        for lib_file in libraries_dir().glob("*.json"):
             library_id = lib_file.stem
             lib = load_library(library_id)
             if _remove_score_refs_from_library(lib, score_id):
@@ -1567,8 +1716,8 @@ def transfer_score_to_system(score_id: str) -> None:
 def delete_user(user_id: str) -> None:
     if not get_user(user_id):
         raise ValueError("User not found")
-    if SCORES_DIR.exists():
-        for sdir in SCORES_DIR.iterdir():
+    if scores_dir().exists():
+        for sdir in scores_dir().iterdir():
             if not sdir.is_dir():
                 continue
             meta = load_score_meta(sdir.name)

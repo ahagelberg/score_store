@@ -1,0 +1,57 @@
+<div class="dialog-overlay hidden" id="maestro-dialog-overlay" data-dialog="maestro">
+  <div class="dialog dialog-wide" role="dialog" aria-labelledby="maestro-dialog-title">
+    <h2 id="maestro-dialog-title">Add maestro</h2>
+    <form id="maestro-dialog-form" method="post" enctype="multipart/form-data">
+      {% include "partials/csrf_field.html" %}
+      <input type="hidden" name="maestro_id" id="maestro-dialog-id" value="">
+      <div class="form-group">
+        <label for="maestro-display-name">Display name</label>
+        <input class="form-control" type="text" id="maestro-display-name" name="display_name" required>
+      </div>
+      <div class="form-group">
+        <label for="maestro-username">Username</label>
+        <input class="form-control" type="text" id="maestro-username" name="username" required autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="maestro-password">Password</label>
+        <input class="form-control" type="password" id="maestro-password" name="password" autocomplete="new-password">
+        <small class="field-hint" id="maestro-password-hint">Required for new maestros</small>
+      </div>
+      <div class="form-group">
+        <label for="maestro-site-title">Site title</label>
+        <input class="form-control" type="text" id="maestro-site-title" name="site_title">
+        <label class="checkbox-label">
+          <input type="checkbox" name="show_site_title" id="maestro-show-site-title" value="1" checked>
+          Show site title in header next to logotype
+        </label>
+        <small class="field-hint">Uncheck when the logotype already includes the site name.</small>
+      </div>
+      <div class="form-group">
+        <label for="maestro-logotype">Logotype</label>
+        <div class="maestro-dialog-logotype-preview-wrap hidden" id="maestro-logotype-preview-wrap">
+          <img class="maestro-dialog-logotype-img" id="maestro-logotype-preview" src="" alt="Current logotype">
+        </div>
+        <input class="form-control" type="file" id="maestro-logotype" name="logotype" accept="image/*">
+        <label class="checkbox-label hidden" id="maestro-remove-logotype-wrap">
+          <input type="checkbox" name="remove_logotype" id="maestro-remove-logotype" value="1">
+          Remove logotype
+        </label>
+      </div>
+      <div class="form-group">
+        <label for="maestro-theme-css">Theme CSS file</label>
+        <input class="form-control" type="file" id="maestro-theme-css" name="theme_css" accept=".css,text/css">
+      </div>
+      <div class="form-group hidden" id="maestro-theme-text-group">
+        <label for="maestro-theme-css-text">Theme CSS</label>
+        <textarea class="form-control theme-css-editor" id="maestro-theme-css-text" name="theme_css_text" rows="8"></textarea>
+      </div>
+      <div class="dialog-actions">
+        <div class="dialog-actions-start">
+          <button type="button" class="btn btn-danger hidden" id="maestro-delete-btn">Delete</button>
+        </div>
+        <button type="button" class="btn" data-maestro-dialog-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>

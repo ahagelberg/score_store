@@ -1,0 +1,152 @@
+(function () {
+  "use strict";
+
+  function closeMaestroDialog() {
+    const overlay = document.getElementById("maestro-dialog-overlay");
+    if (overlay) overlay.classList.add("hidden");
+  }
+
+  function setMaestroLogotypePreview(logotypeUrl) {
+    const wrap = document.getElementById("maestro-logotype-preview-wrap");
+    const img = document.getElementById("maestro-logotype-preview");
+    const removeWrap = document.getElementById("maestro-remove-logotype-wrap");
+    const removeCb = document.getElementById("maestro-remove-logotype");
+    if (!wrap || !img) return;
+    if (logotypeUrl) {
+      img.src = logotypeUrl;
+      wrap.classList.remove("hidden");
+      if (removeWrap) removeWrap.classList.remove("hidden");
+      if (removeCb) removeCb.checked = false;
+    } else {
+      img.removeAttribute("src");
+      wrap.classList.add("hidden");
+      if (removeWrap) removeWrap.classList.add("hidden");
+      if (removeCb) removeCb.checked = false;
+    }
+  }
+
+  function openMaestroDialog(mode, maestro) {
+    const overlay = document.getElementById("maestro-dialog-overlay");
+    const form = document.getElementById("maestro-dialog-form");
+    const title = document.getElementById("maestro-dialog-title");
+    const pw = document.getElementById("maestro-password");
+    const hint = document.getElementById("maestro-password-hint");
+    const deleteBtn = document.getElementById("maestro-delete-btn");
+    const themeTextGroup = document.getElementById("maestro-theme-text-group");
+    const logotypeInput = document.getElementById("maestro-logotype");
+    if (!overlay || !form || !pw || !hint) return;
+    if (mode === "edit" && maestro) {
+      title.textContent = "Edit maestro";
+      form.action = `/admin/maestros/${maestro.id}`;
+      form.method = "post";
+      document.getElementById("maestro-dialog-id").value = maestro.id;
+      document.getElementById("maestro-display-name").value = maestro.displayName;
+      document.getElementById("maestro-username").value = maestro.username;
+      document.getElementById("maestro-site-title").value = maestro.siteTitle || "";
+      const showTitle = document.getElementById("maestro-show-site-title");
+      if (showTitle) showTitle.checked = maestro.showSiteTitle !== false;
+      pw.required = false;
+      pw.value = "";
+      hint.textContent = "Leave blank to keep current password";
+      if (deleteBtn) deleteBtn.classList.remove("hidden");
+      if (themeTextGroup) themeTextGroup.classList.remove("hidden");
+      if (logotypeInput) logotypeInput.value = "";
+      setMaestroLogotypePreview(maestro.logotypeUrl || "");
+    } else {
+      title.textContent = "Add maestro";
+      form.action = "/admin/maestros";
+      form.method = "post";
+      form.reset();
+      const showTitle = document.getElementById("maestro-show-site-title");
+      if (showTitle) showTitle.checked = true;
+      pw.required = true;
+      hint.textContent = "Required for new maestros";
+      if (deleteBtn) deleteBtn.classList.add("hidden");
+      if (themeTextGroup) themeTextGroup.classList.add("hidden");
+      if (logotypeInput) logotypeInput.value = "";
+      setMaestroLogotypePreview("");
+    }
+    overlay.classList.remove("hidden");
+  }
+
+  function openPasswordDialog() {
+    const overlay = document.getElementById("maestro-password-overlay");
+    const form = document.getElementById("maestro-password-form");
+    if (!overlay || !form) return;
+    form.action = "/admin/password";
+    form.reset();
+    overlay.classList.remove("hidden");
+  }
+
+  function closePasswordDialog() {
+    const overlay = document.getElementById("maestro-password-overlay");
+    if (overlay) overlay.classList.add("hidden");
+  }
+
+  async function deleteMaestro(maestroId, displayName) {
+    const msg = `Delete maestro "${displayName}"?\n\nAll scores, libraries, and sub-accounts will be removed.`;
+    if (!window.confirm(msg)) return;
+    const res = await Csrf.fetch(`/admin/maestros/${maestroId}`, { method: "DELETE" });
+    if (!res.ok && window.showToast) showToast("Delete failed", true);
+    else window.location.href = "/admin";
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const addBtn = document.getElementById("add-maestro-btn");
+    if (addBtn) addBtn.addEventListener("click", () => openMaestroDialog("new"));
+
+    document.querySelectorAll(".maestro-edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openMaestroDialog("edit", {
+          id: btn.dataset.maestroId,
+          displayName: btn.dataset.displayName,
+          username: btn.dataset.username,
+          siteTitle: btn.dataset.siteTitle || "",
+          showSiteTitle: btn.dataset.showSiteTitle !== "0",
+          logotypeUrl: btn.dataset.logotypeUrl || "",
+        });
+      });
+    });
+
+    document.querySelectorAll(".maestro-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        deleteMaestro(btn.dataset.maestroId, btn.dataset.displayName);
+      });
+    });
+
+    const deleteBtn = document.getElementById("maestro-delete-btn");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", () => {
+        const maestroId = document.getElementById("maestro-dialog-id").value;
+        const displayName = document.getElementById("maestro-display-name").value || "this maestro";
+        if (maestroId) deleteMaestro(maestroId, displayName);
+      });
+    }
+
+    document.querySelectorAll("[data-maestro-dialog-close]").forEach((el) => {
+      el.addEventListener("click", closeMaestroDialog);
+    });
+
+    document.querySelectorAll("#admin-password-btn").forEach((btn) => {
+      btn.addEventListener("click", openPasswordDialog);
+    });
+
+    document.querySelectorAll("[data-maestro-password-close]").forEach((el) => {
+      el.addEventListener("click", closePasswordDialog);
+    });
+
+    const passwordOverlay = document.getElementById("maestro-password-overlay");
+    if (passwordOverlay) {
+      passwordOverlay.addEventListener("click", (e) => {
+        if (e.target === passwordOverlay) closePasswordDialog();
+      });
+    }
+
+    const maestroOverlay = document.getElementById("maestro-dialog-overlay");
+    if (maestroOverlay) {
+      maestroOverlay.addEventListener("click", (e) => {
+        if (e.target === maestroOverlay) closeMaestroDialog();
+      });
+    }
+  });
+})();
