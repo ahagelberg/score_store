@@ -5,6 +5,7 @@ import os
 import secrets
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urlencode
 
 from flask import (
     Flask,
@@ -41,6 +42,7 @@ PREVIEW_TOKEN_MAX_AGE_SEC = 3600
 SWIPE_THRESHOLD_PX = 50
 SCORE_VIEW_NAV_KEYS = ("lib", "q", "tag", "user", "maestro", PREVIEW_TOKEN_PARAM)
 LIBRARY_CTX_USER_PREFIX = "user-"
+ADMIN_SCOPE_QUERY_KEYS = ("maestro", "user", "lib")
 NAV_PRESERVE_BY_ENDPOINT = {
     "admin": ("q", "tag", "maestro", "user", "lib"),
     "maestro": ("q", "tag", "user", "lib"),
@@ -502,10 +504,10 @@ def resolve_maestro_brand(user: dict | None) -> dict | None:
     logotype_path = store.maestro_logotype_path(username)
     logotype_url = None
     if logotype_path:
-        logotype_url = _append_preview_param(url_for("maestro_logotype", maestro_username=username))
+        logotype_url = append_scope_query_params(url_for("maestro_logotype", maestro_username=username))
     theme_url = None
     if store.maestro_has_theme(username):
-        theme_url = _append_preview_param(url_for("maestro_theme_css", maestro_username=username))
+        theme_url = append_scope_query_params(url_for("maestro_theme_css", maestro_username=username))
     has_logotype = bool(logotype_path)
     return {
         "username": username,
@@ -517,12 +519,25 @@ def resolve_maestro_brand(user: dict | None) -> dict | None:
     }
 
 
-def _append_preview_param(url: str) -> str:
-    extra = preview_query_param()
+def scope_query_params() -> dict:
+    params = dict(preview_query_param())
+    if not has_request_context():
+        return params
+    user = session_user()
+    if user and policy.is_admin(user):
+        for key in ADMIN_SCOPE_QUERY_KEYS:
+            value = request.args.get(key)
+            if value:
+                params[key] = value
+    return params
+
+
+def append_scope_query_params(url: str) -> str:
+    extra = scope_query_params()
     if not extra:
         return url
     sep = "&" if "?" in url else "?"
-    return f"{url}{sep}{PREVIEW_TOKEN_PARAM}={extra[PREVIEW_TOKEN_PARAM]}"
+    return f"{url}{sep}{urlencode(extra)}"
 
 
 def admin_maestro_logotype_url(maestro_username: str) -> str | None:
@@ -600,8 +615,13 @@ def file_extension(stored_name):
 
 
 @app.template_global()
+def serve_file_url(score_id, stored_name):
+    return append_scope_query_params(url_for("serve_file", score_id=score_id, stored_name=stored_name))
+
+
+@app.template_global()
 def score_download_url(score_id):
-    return _append_preview_param(url_for("score_download", score_id=score_id))
+    return append_scope_query_params(url_for("score_download", score_id=score_id))
 
 
 @app.template_global()
@@ -1702,7 +1722,7 @@ def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[
         if f.get("media") == "youtube":
             entry["embed_url"] = store.youtube_embed_url(f.get("url", ""))
         elif f.get("stored_name"):
-            entry["serve_url"] = _append_preview_param(
+            entry["serve_url"] = append_scope_query_params(
                 url_for("serve_file", score_id=score_id, stored_name=f["stored_name"])
             )
         files.append(entry)
@@ -1728,7 +1748,7 @@ def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[
             nav["next_id"] = score_ids[idx + 1]
             next_meta = store.load_score_meta(nav["next_id"])
             nav["next_title"] = next_meta.get("title") if next_meta else None
-    download_url = _append_preview_param(url_for("score_download", score_id=score_id)) if main else None
+    download_url = append_scope_query_params(url_for("score_download", score_id=score_id)) if main else None
     return {
         "score": {
             "id": score_id,
@@ -1773,10 +1793,10 @@ def score_view(score_id):
     main = store.get_main_file(meta)
     main_file_url = None
     if main and main.get("stored_name"):
-        main_file_url = _append_preview_param(
+        main_file_url = append_scope_query_params(
             url_for("serve_file", score_id=score_id, stored_name=main["stored_name"])
         )
-    download_url = _append_preview_param(url_for("score_download", score_id=score_id)) if main else None
+    download_url = append_scope_query_params(url_for("score_download", score_id=score_id)) if main else None
     return render_template(
         "score_view.html",
         score=meta,

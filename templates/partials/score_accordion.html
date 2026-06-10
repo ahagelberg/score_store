@@ -11,7 +11,7 @@
     data-can-edit="{{ 'true' if can_edit|default(false) else 'false' }}"
     data-hard-delete="{{ 'true' if can_hard_delete|default(false) else 'false' }}"
     {% if library_panel.draggable_score %}data-drag-score="true"{% endif %}
-    {% if score.id and score_main %}data-preview-pdf-url="{{ url_for('serve_file', score_id=score.id, stored_name=score_main.stored_name) }}"{% endif %}>
+    {% if score.id and score_main %}data-preview-pdf-url="{{ serve_file_url(score.id, score_main.stored_name) }}"{% endif %}>
   <div class="score-summary{% if score.id %} score-summary-clickable{% endif %}" data-score-summary{% if library_panel.draggable_score %} draggable="true"{% endif %}>
     <div class="score-summary-main">
       <span class="score-aux-icon{% if not aux_files|default([]) %} score-aux-icon-empty{% endif %}" data-score-aux-indicator aria-hidden="true" title="Additional files">{% include "partials/icon_paperclip.svg.html" %}</span>
@@ -41,7 +41,7 @@
            title="Download"
            aria-label="Download">{% include "partials/icon_download.svg.html" %}</a>
         <button type="button" class="btn-icon btn-icon-sm score-print-btn"
-                data-print-url="{{ url_for('serve_file', score_id=score.id, stored_name=score_main.stored_name) }}"
+                data-print-url="{{ serve_file_url(score.id, score_main.stored_name) }}"
                 data-print-media="pdf"
                 title="Print"
                 aria-label="Print">{% include "partials/icon_print.svg.html" %}</button>
