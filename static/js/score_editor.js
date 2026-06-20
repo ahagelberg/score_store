@@ -121,11 +121,14 @@
 
   function scoreSubtitleLine(score) {
     const composer = (score.composer || "").trim();
+    const arranger = (score.arranger || "").trim();
     const year = (score.year || "").trim();
-    if (composer && year) return `${composer} (${year})`;
-    if (composer) return composer;
-    if (year) return `(${year})`;
-    return "";
+    const creditParts = [];
+    if (composer) creditParts.push(composer);
+    if (arranger) creditParts.push(`arr. ${arranger}`);
+    const line = creditParts.join(" · ");
+    if (year) return line ? `${line} (${year})` : `(${year})`;
+    return line;
   }
 
   function summaryFilterText(score) {
@@ -168,6 +171,28 @@
     if (fromHidden.length || !fromDataset.length) return fromHidden;
     if (hiddenEl) hiddenEl.value = JSON.stringify(fromDataset);
     return fromDataset;
+  }
+
+  function metadataFromFields(item) {
+    const data = collectMetadata(item);
+    let tags = [];
+    try {
+      tags = JSON.parse(data.tags || "[]");
+    } catch {
+      tags = [];
+    }
+    return {
+      title: data.title || "",
+      composer: data.composer || "",
+      arranger: data.arranger || "",
+      year: data.year || "",
+      description: data.description || "",
+      tags,
+    };
+  }
+
+  function syncSummaryFromFields(item) {
+    updateSummary(item, metadataFromFields(item));
   }
 
   function updateSummary(item, score) {
@@ -477,6 +502,16 @@
     return item;
   }
 
+  async function parseJsonResponse(res) {
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) return null;
+    try {
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
   async function saveAccordion(item) {
     const meta = collectMetadata(item);
     const scoreId = item.dataset.scoreId;
@@ -489,7 +524,12 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(meta),
     });
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
+    if (!data) {
+      const msg = res.status === 403 ? "Read-only — changes not saved" : "Save failed";
+      showToast(msg, true);
+      return;
+    }
     if (!res.ok) {
       showToast(data.error || "Save failed", true);
       return;
@@ -730,6 +770,18 @@
     summaryEl.addEventListener("dragend", () => item.classList.remove("score-dragging"));
   }
 
+  function bindMetadataFields(item) {
+    if (item.dataset.metadataFieldsBound) return;
+    item.dataset.metadataFieldsBound = "true";
+    item.querySelectorAll("[data-field]").forEach((el) => {
+      el.addEventListener("input", () => syncSummaryFromFields(item));
+    });
+    const tagsHidden = item.querySelector('input[name="tags"]');
+    if (tagsHidden) {
+      tagsHidden.addEventListener("change", () => syncSummaryFromFields(item));
+    }
+  }
+
   function bindAccordion(item) {
     const summaryEl = item.querySelector("[data-score-summary]");
     const editBtn = item.querySelector(".score-edit-btn");
@@ -770,6 +822,7 @@
     });
 
     bindFilenameFields(item);
+    bindMetadataFields(item);
 
     const ytBtn = item.querySelector(".add-youtube-btn");
     const auxList = item.querySelector("[data-aux-list]");

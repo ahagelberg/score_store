@@ -1096,31 +1096,10 @@ textarea.form-control {
 
 .score-editor-preview-float {
   position: fixed;
-  left: 0;
-  top: 0;
   width: var(--score-editor-preview-width);
+  max-height: var(--score-editor-preview-max-height, 85vh);
   z-index: var(--score-editor-preview-z-index);
   pointer-events: auto;
-}
-
-.score-editor-preview-float[data-x] {
-  left: calc(attr(data-x number) * 1px);
-}
-
-.score-editor-preview-float[data-y] {
-  top: calc(attr(data-y number) * 1px);
-}
-
-.score-editor-preview-float[data-w] {
-  width: calc(attr(data-w number) * 1px);
-}
-
-.score-editor-preview-float[data-max-h] {
-  --score-editor-preview-max-height: calc(attr(data-max-h number) * 1px);
-}
-
-.score-editor-preview-float[data-tail-y] {
-  --score-editor-preview-tail-top: calc(attr(data-tail-y number) * 1px);
 }
 
 .score-editor-preview-float.hidden,

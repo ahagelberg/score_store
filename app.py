@@ -712,6 +712,7 @@ def csrf_token():
 
 
 _SETUP_EXEMPT = frozenset({"setup", "static"})
+PREVIEW_ALLOWED_POST_ENDPOINTS = frozenset({"mint_viewer_ctx"})
 
 
 @app.before_request
@@ -748,7 +749,7 @@ def _block_preview_mutations():
         return
     if request.endpoint in _SETUP_EXEMPT or request.endpoint == "static":
         return
-    if preview_mutations_blocked():
+    if preview_mutations_blocked() and request.endpoint not in PREVIEW_ALLOWED_POST_ENDPOINTS:
         abort(403)
 
 
@@ -865,6 +866,7 @@ def library():
         active_tag=tag,
         panel_title="My library",
         panel_class="desktop-panel-page",
+        summary_opens_viewer=True,
     )
     return render_template(
         "library.html",
@@ -993,7 +995,6 @@ def maestro():
             active_tag=tag,
             draggable_score=True,
             assign_user=selected_user,
-            summary_opens_viewer=True,
         )
     preview_active = preview_request_active()
     tree_ctx = {

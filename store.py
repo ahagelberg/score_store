@@ -1371,14 +1371,19 @@ def normalize_year(value) -> str:
 
 def score_subtitle_line(meta: dict) -> str:
     composer = (meta.get("composer") or "").strip()
+    arranger = (meta.get("arranger") or "").strip()
     year = (meta.get("year") or "").strip()
-    if composer and year:
-        return f"{composer} ({year})"
+    credit_parts = []
     if composer:
-        return composer
+        credit_parts.append(composer)
+    if arranger:
+        credit_parts.append(f"arr. {arranger}")
+    line = " · ".join(credit_parts)
     if year:
+        if line:
+            return f"{line} ({year})"
         return f"({year})"
-    return ""
+    return line
 
 
 def normalize_metadata(data: dict) -> dict:

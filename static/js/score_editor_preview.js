@@ -8,7 +8,7 @@
   const PREVIEW_ERROR_LABEL = "Preview unavailable";
   const PREVIEW_DEFAULT_TITLE = "New score";
   const PREVIEW_FLOAT_ID = "score-editor-preview-float";
-  const PREVIEW_LABEL_FIELD_SELECTOR = '[data-field="title"], [data-field="composer"], [data-field="year"]';
+  const PREVIEW_LABEL_FIELD_SELECTOR = '[data-field="title"], [data-field="composer"], [data-field="arranger"], [data-field="year"]';
   const PREVIEW_BASE_WIDTH_PX = 280;
   const PREVIEW_WIDTH_SCALE = 2;
   const PREVIEW_PREFERRED_WIDTH_PX = PREVIEW_BASE_WIDTH_PX * PREVIEW_WIDTH_SCALE;
@@ -93,11 +93,13 @@
     return floatPanel?.querySelector(".score-editor-preview-mount") || null;
   }
 
-  function previewSubtitleLine(composer, year) {
-    if (composer && year) return `${composer} (${year})`;
-    if (composer) return composer;
-    if (year) return `(${year})`;
-    return "";
+  function previewSubtitleLine(composer, arranger, year) {
+    const creditParts = [];
+    if (composer) creditParts.push(composer);
+    if (arranger) creditParts.push(`arr. ${arranger}`);
+    const line = creditParts.join(" · ");
+    if (year) return line ? `${line} (${year})` : `(${year})`;
+    return line;
   }
 
   function previewLabelForItem(item) {
@@ -105,8 +107,9 @@
       || item.querySelector(".score-summary-title")?.textContent?.trim()
       || PREVIEW_DEFAULT_TITLE;
     const composer = item.querySelector('[data-field="composer"]')?.value?.trim() || "";
+    const arranger = item.querySelector('[data-field="arranger"]')?.value?.trim() || "";
     const year = item.querySelector('[data-field="year"]')?.value?.trim() || "";
-    const subtitle = previewSubtitleLine(composer, year)
+    const subtitle = previewSubtitleLine(composer, arranger, year)
       || item.querySelector(".score-summary-composer")?.textContent?.trim()
       || "";
     return { title, subtitle };
@@ -240,16 +243,44 @@
     return Number.isFinite(parsed) ? parsed : PREVIEW_PREFERRED_WIDTH_PX;
   }
 
-  function previewWidthForEditor(editorRect, viewportWidth) {
-    const spaceRight = viewportWidth - PREVIEW_VIEWPORT_MARGIN_PX - editorRect.right - PREVIEW_GAP_PX;
+  function previewAnchorRight(item, editorRect) {
+    const filesPane = item.closest(".files-pane");
+    const paneRect = filesPane?.getBoundingClientRect();
+    return paneRect ? paneRect.right : editorRect.right;
+  }
+
+  function previewWidthForAnchor(anchorRight, viewportWidth) {
+    const spaceRight = viewportWidth - PREVIEW_VIEWPORT_MARGIN_PX - anchorRight - PREVIEW_GAP_PX;
     return Math.max(PREVIEW_MIN_WIDTH_PX, Math.min(preferredPreviewWidthPx(), spaceRight));
   }
 
-  function applyPreviewWidth(panel, widthPx) {
-    const w = String(Math.round(widthPx));
-    if (panel.dataset.w === w) return false;
-    panel.dataset.w = w;
-    return true;
+  function applyPreviewLayout(panel, layout) {
+    const bubble = panel.querySelector(".score-editor-preview-bubble");
+    const widthPx = Math.round(layout.width);
+    const leftPx = Math.round(layout.left);
+    const topPx = Math.round(layout.top);
+    const maxHeightPx = Math.round(layout.maxHeight);
+    const tailTopPx = Math.round(layout.tailTop);
+    const widthChanged = panel.dataset.layoutW !== String(widthPx);
+    panel.style.left = `${leftPx}px`;
+    panel.style.top = `${topPx}px`;
+    panel.style.width = `${widthPx}px`;
+    panel.style.setProperty("--score-editor-preview-max-height", `${maxHeightPx}px`);
+    if (bubble) {
+      bubble.style.setProperty("--score-editor-preview-tail-top", `${tailTopPx}px`);
+    }
+    panel.dataset.layoutW = String(widthPx);
+    return widthChanged;
+  }
+
+  function clearPreviewLayout(panel) {
+    panel.style.left = "";
+    panel.style.top = "";
+    panel.style.width = "";
+    panel.style.removeProperty("--score-editor-preview-max-height");
+    delete panel.dataset.layoutW;
+    const bubble = panel.querySelector(".score-editor-preview-bubble");
+    if (bubble) bubble.style.removeProperty("--score-editor-preview-tail-top");
   }
 
   function positionPanel(item) {
@@ -264,31 +295,40 @@
     const viewportWidth = document.documentElement.clientWidth;
     const viewportHeight = document.documentElement.clientHeight;
     const maxHeight = Math.floor(viewportHeight * PREVIEW_MAX_HEIGHT_VH_RATIO);
-    panel.dataset.maxH = String(maxHeight);
-    const widthChanged = applyPreviewWidth(panel, previewWidthForEditor(editorRect, viewportWidth));
-    const panelWidth = panel.offsetWidth;
-    let left = editorRect.right + PREVIEW_GAP_PX;
+    const anchorRight = previewAnchorRight(item, editorRect);
+    const widthPx = previewWidthForAnchor(anchorRight, viewportWidth);
+    let left = anchorRight + PREVIEW_GAP_PX;
     let top = editorRect.top;
-    if (left + panelWidth > viewportWidth - PREVIEW_VIEWPORT_MARGIN_PX) {
-      left = viewportWidth - panelWidth - PREVIEW_VIEWPORT_MARGIN_PX;
+    if (left + widthPx > viewportWidth - PREVIEW_VIEWPORT_MARGIN_PX) {
+      left = viewportWidth - widthPx - PREVIEW_VIEWPORT_MARGIN_PX;
     }
     if (left < PREVIEW_VIEWPORT_MARGIN_PX) left = PREVIEW_VIEWPORT_MARGIN_PX;
-    panel.dataset.x = String(Math.round(left));
-    panel.dataset.y = String(Math.round(top));
+    applyPreviewLayout(panel, {
+      width: widthPx,
+      left,
+      top,
+      maxHeight,
+      tailTop: PREVIEW_TAIL_MIN_PX,
+    });
     const panelHeight = panel.offsetHeight;
     if (top + panelHeight > viewportHeight - PREVIEW_VIEWPORT_MARGIN_PX) {
       top = Math.max(
         PREVIEW_VIEWPORT_MARGIN_PX,
         viewportHeight - panelHeight - PREVIEW_VIEWPORT_MARGIN_PX
       );
-      panel.dataset.y = String(Math.round(top));
     }
     const editorMid = editorRect.top + editorRect.height / 2 - top;
     const tailTop = Math.max(
       PREVIEW_TAIL_MIN_PX,
       Math.min(editorMid - PREVIEW_TAIL_SIZE_PX, panelHeight - PREVIEW_TAIL_MAX_INSET_PX)
     );
-    panel.dataset.tailY = String(Math.round(tailTop));
+    const widthChanged = applyPreviewLayout(panel, {
+      width: widthPx,
+      left,
+      top,
+      maxHeight,
+      tailTop,
+    });
     if (widthChanged) {
       const mount = floatMount();
       if (mount?.dataset.pdfUrl) {
@@ -366,11 +406,7 @@
     clearPreviewLabelInputs();
     setPreviewActiveItem(null);
     if (!floatPanel) return;
-    delete floatPanel.dataset.w;
-    delete floatPanel.dataset.x;
-    delete floatPanel.dataset.y;
-    delete floatPanel.dataset.maxH;
-    delete floatPanel.dataset.tailY;
+    clearPreviewLayout(floatPanel);
     floatPanel.classList.add("hidden");
     floatPanel.setAttribute("aria-hidden", "true");
     delete floatPanel.dataset.scoreId;

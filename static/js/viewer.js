@@ -825,11 +825,14 @@
   function scoreSubtitleLine(score) {
     if (score.subtitle) return score.subtitle;
     const composer = (score.composer || "").trim();
+    const arranger = (score.arranger || "").trim();
     const year = (score.year || "").trim();
-    if (composer && year) return `${composer} (${year})`;
-    if (composer) return composer;
-    if (year) return `(${year})`;
-    return "";
+    const creditParts = [];
+    if (composer) creditParts.push(composer);
+    if (arranger) creditParts.push(`arr. ${arranger}`);
+    const line = creditParts.join(" · ");
+    if (year) return line ? `${line} (${year})` : `(${year})`;
+    return line;
   }
 
   function renderTitle(score) {
