@@ -158,6 +158,17 @@ def libraries_dir() -> Path:
     return maestro_data_dir(require_maestro_data()) / "libraries"
 
 
+USER_NOTES_DIRNAME = "user-notes"
+
+
+def user_notes_dir() -> Path:
+    return maestro_data_dir(require_maestro_data()) / USER_NOTES_DIRNAME
+
+
+def user_notes_path(user_id: str) -> Path:
+    return user_notes_dir() / f"{user_id}.json"
+
+
 def reconfigure_data_dir(data_dir: Path) -> Path:
     """Point store paths at data_dir (absolute, resolved)."""
     global DATA_DIR, USERS_PATH
@@ -325,6 +336,7 @@ def ensure_maestro_data_dirs(maestro_username: str) -> None:
     base = maestro_data_dir(maestro_username)
     (base / "scores").mkdir(parents=True, exist_ok=True)
     (base / "libraries").mkdir(parents=True, exist_ok=True)
+    (base / USER_NOTES_DIRNAME).mkdir(parents=True, exist_ok=True)
     (base / MAESTRO_ASSETS_DIRNAME).mkdir(parents=True, exist_ok=True)
 
 
@@ -1232,6 +1244,40 @@ def save_library(library_id: str, lib: dict) -> None:
     sync_library_metadata(library_id, lib)
     lib.pop("file_aliases", None)
     _write_json(library_path(library_id), lib)
+
+
+def default_user_notes() -> dict:
+    return {"scores": {}}
+
+
+def load_user_notes(user_id: str) -> dict:
+    notes = _read_json(user_notes_path(user_id), default_user_notes())
+    notes.setdefault("scores", {})
+    return notes
+
+
+def save_user_notes(user_id: str, notes: dict) -> None:
+    notes.setdefault("scores", {})
+    _write_json(user_notes_path(user_id), notes)
+
+
+def get_score_notes(user_id: str, score_id: str) -> dict:
+    notes = load_user_notes(user_id)
+    entry = notes["scores"].get(score_id)
+    if not isinstance(entry, dict):
+        return {"files": {}}
+    entry.setdefault("files", {})
+    return entry
+
+
+def set_score_notes(user_id: str, score_id: str, score_notes: dict) -> None:
+    notes = load_user_notes(user_id)
+    files = score_notes.get("files") if isinstance(score_notes, dict) else None
+    if not isinstance(files, dict) or not files:
+        notes["scores"].pop(score_id, None)
+    else:
+        notes["scores"][score_id] = {"files": files}
+    save_user_notes(user_id, notes)
 
 
 def _assert_path_under_base(path: Path, base: Path) -> None:

@@ -2354,6 +2354,278 @@ body.score-viewer-open {
   border: none;
 }
 
+/* Viewer notes */
+.viewer-icon-notes {
+  width: var(--viewer-header-icon-size);
+  height: var(--viewer-header-icon-size);
+}
+
+.viewer-header-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.viewer-notes-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--color-toolbar);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.viewer-notes-tools,
+.viewer-notes-colors,
+.viewer-notes-pen-sizes,
+.viewer-notes-mark-sizes,
+.viewer-notes-symbols {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.viewer-notes-tool {
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.viewer-notes-tool:hover {
+  background: var(--color-panel);
+}
+
+.viewer-notes-tool.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.viewer-notes-color-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-light);
+  cursor: pointer;
+}
+
+.viewer-notes-color-swatch[data-color="#dc2626"] { background: #dc2626; }
+.viewer-notes-color-swatch[data-color="#facc15"] { background: #facc15; }
+.viewer-notes-color-swatch[data-color="#2563eb"] { background: #2563eb; }
+.viewer-notes-color-swatch[data-color="#16a34a"] { background: #16a34a; }
+.viewer-notes-color-swatch[data-color="#171717"] { background: #171717; }
+
+.viewer-notes-color-swatch.active {
+  border-color: var(--color-text);
+  box-shadow: 0 0 0 1px var(--color-surface);
+}
+
+.viewer-notes-pen-size-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.viewer-notes-pen-size-btn:hover {
+  background: var(--color-panel);
+}
+
+.viewer-notes-pen-size-btn.active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.viewer-notes-pen-size-dot {
+  display: block;
+  border-radius: 50%;
+  background: var(--color-text);
+}
+
+.viewer-notes-pen-size-btn[data-pen-size-index="0"] .viewer-notes-pen-size-dot {
+  width: 4px;
+  height: 4px;
+}
+
+.viewer-notes-pen-size-btn[data-pen-size-index="1"] .viewer-notes-pen-size-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.viewer-notes-pen-size-btn[data-pen-size-index="2"] .viewer-notes-pen-size-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.viewer-notes-pen-size-btn[data-pen-size-index="3"] .viewer-notes-pen-size-dot {
+  width: 10px;
+  height: 10px;
+}
+
+.viewer-notes-pen-size-btn[data-pen-size-index="4"] .viewer-notes-pen-size-dot {
+  width: 12px;
+  height: 12px;
+}
+
+.viewer-notes-mark-size-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.viewer-notes-mark-size-btn:hover {
+  background: var(--color-panel);
+}
+
+.viewer-notes-mark-size-btn.active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.viewer-notes-mark-size-label {
+  display: block;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.viewer-notes-mark-size-btn[data-mark-size-index="0"] .viewer-notes-mark-size-label {
+  font-size: 8px;
+}
+
+.viewer-notes-mark-size-btn[data-mark-size-index="1"] .viewer-notes-mark-size-label {
+  font-size: 10px;
+}
+
+.viewer-notes-mark-size-btn[data-mark-size-index="2"] .viewer-notes-mark-size-label {
+  font-size: 12px;
+}
+
+.viewer-notes-mark-size-btn[data-mark-size-index="3"] .viewer-notes-mark-size-label {
+  font-size: 14px;
+}
+
+.viewer-notes-mark-size-btn[data-mark-size-index="4"] .viewer-notes-mark-size-label {
+  font-size: 16px;
+}
+
+.viewer-notes-symbol-btn {
+  min-width: 28px;
+  height: 24px;
+  padding: 0 4px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.viewer-notes-symbol-btn:hover {
+  background: var(--color-panel);
+}
+
+.viewer-notes-symbol-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.viewer-notes-symbol-btn-dynamic,
+.viewer-notes-mark-dynamic {
+  font-family: "Times New Roman", Times, serif;
+  font-style: italic;
+}
+
+.viewer-notes-symbol-btn-note {
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+}
+
+.viewer-notes-symbol-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.viewer-notes-layer {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.viewer-notes-layer-editable {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.viewer-notes-layer-editable.viewer-notes-layer-eraser {
+  cursor: pointer;
+}
+
+.viewer-notes-layer-editable .viewer-notes-mark-text,
+.viewer-notes-layer-editable .viewer-notes-mark-symbol {
+  cursor: grab;
+}
+
+.viewer-notes-mark-dragging {
+  cursor: grabbing;
+}
+
+.viewer-notes-mark-eraser-hover {
+  filter: drop-shadow(0 0 2px var(--color-danger)) drop-shadow(0 0 4px var(--color-danger));
+}
+
+.viewer-notes-mark-highlight.viewer-notes-mark-eraser-hover {
+  opacity: 0.65;
+  stroke: var(--color-danger);
+  stroke-width: 2px;
+}
+
+.viewer-notes-mark-highlight {
+  opacity: 0.35;
+}
+
+.viewer-notes-mark-preview {
+  pointer-events: none;
+}
+
+.viewer-notes-text-input {
+  position: absolute;
+  z-index: 3;
+  min-width: 80px;
+  max-width: min(240px, 60%);
+  padding: 2px 4px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+}
+
 /* Toast */
 .toast-container {
   position: fixed;

@@ -1,5 +1,7 @@
 <div id="score-viewer-overlay" class="score-viewer-overlay hidden" aria-hidden="true"
-     data-pdf-worker="{{ url_for('static', filename='vendor/pdfjs/pdf.worker.min.js') }}">
+     data-pdf-worker="{{ url_for('static', filename='vendor/pdfjs/pdf.worker.min.js') }}"
+     {% if current_user %}data-user-id="{{ current_user.id }}"{% endif %}
+     data-notes-storage="{{ notes_storage }}">
   <div class="viewer-page" id="score-viewer-panel">
     <div class="viewer-header-bar">
       <button type="button" class="btn-icon btn-icon-sm viewer-header-btn" id="score-viewer-close" title="Close" aria-label="Close viewer">
@@ -26,6 +28,12 @@
       <button type="button" class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-print" title="Print" aria-label="Print">
         {% include "partials/icon_print.svg.html" %}
       </button>
+      <button type="button" class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-notes-toggle" aria-label="Notes" title="Notes">
+        <svg class="viewer-icon-notes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 20h9"/>
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+        </svg>
+      </button>
       <button type="button" class="btn-icon btn-icon-sm viewer-header-btn" id="score-viewer-fullscreen" aria-label="Enter fullscreen">
         <svg class="viewer-icon-fullscreen-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9"/>
@@ -41,6 +49,7 @@
         </svg>
       </button>
     </div>
+    <div class="viewer-notes-toolbar hidden" id="score-viewer-notes-toolbar" aria-label="Notes tools"></div>
     <div class="viewer-toolbar hidden" id="score-viewer-toolbar"></div>
     <div class="viewer-content" id="score-viewer-content"></div>
   </div>

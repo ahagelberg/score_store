@@ -389,6 +389,7 @@
         badge.textContent = String(pageNum);
         slot.appendChild(badge);
       }
+      window.ScoreViewerNotes?.onPageSlotReady(slot, pageNum);
     } catch {
       slot.replaceChildren();
       const err = document.createElement("p");
@@ -704,6 +705,7 @@
       hidePdfPageNav();
       setPdfScrollModeBtnVisible(false);
     }
+    window.ScoreViewerNotes?.onPaneChange(fileId, pane);
   }
 
   function paneHtml(file) {
@@ -803,6 +805,7 @@
       updatePdfScrollModeUi();
       ensurePdfPaneRendered(selected);
     }
+    window.ScoreViewerNotes?.onPaneChange(selectedFileId, selected);
   }
 
   function renderNav(nav) {
@@ -893,6 +896,7 @@
     renderDownload(data.download_url);
     renderToolbar(data.files, data.selected_file_id);
     renderContent(data.files, data.selected_file_id);
+    window.ScoreViewerNotes?.onViewerOpen(scoreId, data.files, data.selected_file_id);
     overlay.classList.remove("hidden");
     overlay.setAttribute("aria-hidden", "false");
     document.body.classList.add("score-viewer-open");
@@ -900,6 +904,7 @@
   }
 
   function close() {
+    window.ScoreViewerNotes?.onViewerClose();
     exitFullscreenIfNeeded();
     hidePdfPageNav();
     setPdfScrollModeBtnVisible(false);
