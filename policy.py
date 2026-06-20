@@ -52,10 +52,6 @@ def user_can_manage_folders_in_library(user: dict, library_id: str) -> bool:
     return is_singer(user) and library_id == user["id"]
 
 
-def user_can_manage_library(user: dict, library_id: str) -> bool:
-    return user_can_upload_to_library(user, library_id)
-
-
 def library_panel_capabilities(user: dict, library_id: str) -> dict:
     return {
         "can_upload": user_can_upload_to_library(user, library_id),

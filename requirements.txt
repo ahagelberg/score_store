@@ -1,3 +1,4 @@
 Flask>=3.0,<4
 cryptography>=42,<45
 fpdf2>=2.7,<3
+gunicorn>=22,<24

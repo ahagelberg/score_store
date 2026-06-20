@@ -3,6 +3,8 @@
 import json
 import os
 import secrets
+import subprocess
+import sys
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlencode
@@ -17,6 +19,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
@@ -39,7 +42,6 @@ CTX_TOKEN_SALT = "score-nav-ctx"
 PREVIEW_TOKEN_SALT = "score-admin-preview"
 PREVIEW_TOKEN_PARAM = "preview"
 PREVIEW_TOKEN_MAX_AGE_SEC = 3600
-SWIPE_THRESHOLD_PX = 50
 SCORE_VIEW_NAV_KEYS = ("lib", "q", "tag", "user", "maestro", PREVIEW_TOKEN_PARAM)
 LIBRARY_CTX_USER_PREFIX = "user-"
 ADMIN_SCOPE_QUERY_KEYS = ("maestro", "user", "lib")
@@ -49,9 +51,14 @@ NAV_PRESERVE_BY_ENDPOINT = {
     "maestro": ("q", "tag", "user", "lib"),
     "library": ("q", "tag"),
 }
+DEFAULT_HTTP_PORT = 5000
+DEFAULT_GUNICORN_WORKERS = 4
+GUNICORN_BIND_HOST = "0.0.0.0"
+DEV_MODE_ENV = "FLASK_DEBUG"
+DEV_MODE_CLI_FLAG = "--dev"
+GUNICORN_WORKERS_ENV = "GUNICORN_WORKERS"
 
 app = Flask(__name__)
-store.reload_data_dir_from_instance()
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
 if os.environ.get("USE_HTTPS") == "1":
     app.config["SESSION_COOKIE_SECURE"] = True
@@ -66,10 +73,30 @@ def _preview_serializer() -> URLSafeTimedSerializer:
 
 
 def session_user() -> dict | None:
+    """Real logged-in account (ignores ?preview=). Use for @role_required and account admin."""
     uid = session.get(SESSION_USER_KEY)
     if not uid:
         return None
     return store.get_user(uid)
+
+
+def current_user() -> dict | None:
+    """Effective user for library/score UI and permissions; honors admin ?preview= impersonation."""
+    token = request.args.get(PREVIEW_TOKEN_PARAM, "")
+    if token:
+        admin = session_user()
+        if admin and policy.is_admin(admin):
+            preview_uid = decode_preview_token(token)
+            if preview_uid:
+                target = store.get_user(preview_uid)
+                if target and policy.admin_can_preview_user(admin, target):
+                    return target
+    return session_user()
+
+
+def account_user() -> dict | None:
+    """Alias for session_user(); use on password changes and account CRUD routes."""
+    return session_user()
 
 
 def encode_preview_token(user_id: str) -> str:
@@ -100,23 +127,7 @@ def preview_request_active() -> bool:
 
 
 def preview_mutations_blocked() -> bool:
-    if not preview_request_active():
-        return False
-    target = current_user()
-    return not (target and policy.is_maestro(target))
-
-
-def current_user() -> dict | None:
-    token = request.args.get(PREVIEW_TOKEN_PARAM, "")
-    if token:
-        admin = session_user()
-        if admin and policy.is_admin(admin):
-            preview_uid = decode_preview_token(token)
-            if preview_uid:
-                target = store.get_user(preview_uid)
-                if target and policy.admin_can_preview_user(admin, target):
-                    return target
-    return session_user()
+    return preview_request_active()
 
 
 def login_required(view):
@@ -160,7 +171,7 @@ def role_required(*roles):
         @wraps(view)
         @login_required
         def wrapped(*args, **kwargs):
-            user = session_user()
+            user = account_user()
             if not user or user["role"] not in roles:
                 abort(403)
             return view(*args, **kwargs)
@@ -168,15 +179,25 @@ def role_required(*roles):
     return decorator
 
 
+def maestro_scope_required(view):
+    """Maestro UI routes that allow admin ?preview= impersonation."""
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not policy.is_maestro(current_user()):
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
 def password_secret() -> str:
     return app.secret_key
 
 
 def home_url_for_user(user: dict) -> str:
-    role = user.get("role", "")
-    if role == store.ADMIN_ROLE:
+    if policy.is_admin(user):
         return url_for("admin")
-    if role == store.MAESTRO_ROLE:
+    if policy.is_maestro(user):
         return url_for("maestro")
     return url_for("library")
 
@@ -225,6 +246,19 @@ def json_error(message: str, status: int = 400):
 
 def file_json(file_entry: dict) -> dict:
     return {**file_entry, "type_label": store.aux_file_type_label(file_entry)}
+
+
+def score_metadata_from_data(data, user: dict | None = None) -> dict:
+    metadata = {
+        "title": data.get("title", ""),
+        "composer": data.get("composer", ""),
+        "arranger": data.get("arranger", ""),
+        "description": data.get("description", ""),
+        "tags": data.get("tags", "[]"),
+    }
+    if user and policy.user_can_edit_score_year(user):
+        metadata["year"] = data.get("year", "")
+    return metadata
 
 
 def library_scores(library_id: str, query: str, tag: str | None) -> list[dict]:
@@ -677,32 +711,15 @@ def csrf_token():
     return ensure_csrf_token()
 
 
-_bootstrap_done = False
-_legacy_migration_done = False
-_opaque_ids_migration_done = False
-_SETUP_EXEMPT = frozenset({"setup", "static", "login"})
+_SETUP_EXEMPT = frozenset({"setup", "static"})
 
 
 @app.before_request
 def _setup_and_bootstrap():
-    global _bootstrap_done, _legacy_migration_done, _opaque_ids_migration_done
     if request.endpoint in _SETUP_EXEMPT:
         return
-    if not _legacy_migration_done:
-        store.reload_data_dir_from_instance()
-        store.migrate_legacy_flat_layout()
-        _legacy_migration_done = True
-    if not _opaque_ids_migration_done:
-        store.migrate_all_opaque_score_ids()
-        _opaque_ids_migration_done = True
-    if store.env_bootstrap_configured() and not _bootstrap_done:
-        store.bootstrap_admin(password_secret())
-        _bootstrap_done = True
-    if store.needs_setup():
+    if store.ensure_data_ready(password_secret()):
         return redirect(url_for("setup"))
-    if not _bootstrap_done:
-        store.bootstrap_admin(password_secret())
-        _bootstrap_done = True
 
 
 @app.before_request
@@ -944,11 +961,9 @@ def admin():
 
 
 @app.route("/maestro")
-@login_required
+@maestro_scope_required
 def maestro():
     user = current_user()
-    if not policy.is_maestro(user):
-        abort(403)
     query = request.args.get("q", "")
     tag = request.args.get("tag")
     selected_user = request.args.get("user")
@@ -1010,7 +1025,7 @@ def maestro():
 @app.post("/maestro/users/new")
 @role_required(store.MAESTRO_ROLE)
 def maestro_user_new():
-    actor = current_user()
+    actor = account_user()
     display_name = request.form.get("display_name", "").strip()
     username = request.form.get("username", "").strip().lower()
     password = request.form.get("password", "")
@@ -1033,7 +1048,7 @@ def maestro_user_new():
 @app.post("/maestro/users/<user_id>/edit")
 @role_required(store.MAESTRO_ROLE)
 def maestro_user_edit(user_id):
-    actor = current_user()
+    actor = account_user()
     user = store.get_user(user_id)
     if not user or not policy.user_owns_sub_account(actor, user):
         abort(404)
@@ -1078,7 +1093,7 @@ def maestro_user_edit(user_id):
 @app.post("/maestro/users/<user_id>/delete")
 @role_required(store.MAESTRO_ROLE)
 def maestro_user_delete(user_id):
-    actor = current_user()
+    actor = account_user()
     target = store.get_user(user_id)
     if not target or not policy.user_owns_sub_account(actor, target):
         abort(404)
@@ -1208,7 +1223,7 @@ def admin_maestro_delete(maestro_id):
 @app.post("/admin/password")
 @role_required(store.ADMIN_ROLE)
 def admin_change_password():
-    user = current_user()
+    user = account_user()
     current_password = request.form.get("current_password", "")
     new_password = request.form.get("new_password", "")
     confirm_password = request.form.get("new_password_confirm", "")
@@ -1289,7 +1304,6 @@ def maestro_theme_css(maestro_username):
     path = store.maestro_theme_path(maestro_username)
     if not path.is_file():
         abort(404)
-    from flask import send_file
     return send_file(path, mimetype="text/css")
 
 
@@ -1302,14 +1316,13 @@ def maestro_logotype(maestro_username):
     path = store.maestro_logotype_path(maestro_username)
     if not path:
         abort(404)
-    from flask import send_file
     return send_file(path)
 
 
 @app.post("/maestro/password")
 @role_required(store.MAESTRO_ROLE)
 def maestro_change_password():
-    user = current_user()
+    user = account_user()
     current_password = request.form.get("current_password", "")
     new_password = request.form.get("new_password", "")
     confirm_password = request.form.get("new_password_confirm", "")
@@ -1351,14 +1364,14 @@ def _user_handout_context(user_id: str) -> dict:
 
 
 @app.get("/maestro/users/<user_id>/handout")
-@role_required(store.MAESTRO_ROLE)
+@maestro_scope_required
 def maestro_user_handout(user_id):
     ctx = _user_handout_context(user_id)
     return render_template("partials/user_handout_content.html", **ctx)
 
 
 @app.get("/maestro/users/<user_id>/handout.pdf")
-@role_required(store.MAESTRO_ROLE)
+@maestro_scope_required
 def maestro_user_handout_pdf(user_id):
     ctx = _user_handout_context(user_id)
     try:
@@ -1375,7 +1388,7 @@ def maestro_user_handout_pdf(user_id):
 @app.post("/maestro/assign")
 @role_required(store.MAESTRO_ROLE)
 def maestro_assign():
-    user = current_user()
+    user = account_user()
     if not policy.user_can_assign_scores(user):
         abort(403)
     data = request.get_json(silent=True) or {}
@@ -1475,13 +1488,7 @@ def score_new(library_ctx):
     if not upload or not upload.filename:
         return json_error("PDF file required")
     folder_id = request.form.get("folder_id", store.ROOT_FOLDER_ID)
-    metadata = {
-        "title": request.form.get("title", ""),
-        "composer": request.form.get("composer", ""),
-        "arranger": request.form.get("arranger", ""),
-        "description": request.form.get("description", ""),
-        "tags": request.form.get("tags", "[]"),
-    }
+    metadata = score_metadata_from_data(request.form)
     try:
         meta = store.create_score_from_upload(lib_id, folder_id, upload, metadata, store.score_owner_id(user))
     except ValueError as e:
@@ -1499,15 +1506,7 @@ def score_edit(score_id):
     if not policy.user_can_edit_score(user, meta):
         abort(403)
     data = request.get_json(silent=True) or request.form
-    metadata = {
-        "title": data.get("title", ""),
-        "composer": data.get("composer", ""),
-        "arranger": data.get("arranger", ""),
-        "description": data.get("description", ""),
-        "tags": data.get("tags", "[]"),
-    }
-    if policy.user_can_edit_score_year(user):
-        metadata["year"] = data.get("year", "")
+    metadata = score_metadata_from_data(data, user)
     try:
         meta = store.update_score_metadata(score_id, metadata, allow_year=policy.user_can_edit_score_year(user))
     except ValueError as e:
@@ -1624,13 +1623,7 @@ def score_file_split(src_id, file_id):
     library_ctx = data.get("library_ctx", "global")
     lib_id = _resolve_library_ctx(user, library_ctx)
     folder_id = data.get("folder_id", store.ROOT_FOLDER_ID)
-    metadata = {
-        "title": data.get("title", ""),
-        "composer": data.get("composer", ""),
-        "arranger": data.get("arranger", ""),
-        "description": data.get("description", ""),
-        "tags": data.get("tags", "[]"),
-    }
+    metadata = score_metadata_from_data(data)
     try:
         meta = store.split_file_to_new_score(src_id, file_id, lib_id, folder_id, metadata, store.score_owner_id(user))
     except ValueError as e:
@@ -1677,7 +1670,6 @@ def serve_file(score_id, stored_name):
         abort(404)
     if not path.exists():
         abort(404)
-    from flask import send_file
     return send_file(path, as_attachment=False, download_name=stored_name)
 
 
@@ -1701,28 +1693,7 @@ def score_download(score_id):
         abort(404)
     if not path.exists():
         abort(404)
-    from flask import send_file
     return send_file(path, as_attachment=True, download_name=store.file_download_name(main))
-
-
-def score_ids_for_viewer(user: dict, score_id: str) -> list[str]:
-    raw = request.args.get("score_ids")
-    if raw:
-        try:
-            score_ids = json.loads(raw)
-        except json.JSONDecodeError:
-            score_ids = None
-        else:
-            if isinstance(score_ids, list):
-                try:
-                    lib_id = view_library_id(user)
-                except HTTPException:
-                    lib_id = None
-                if lib_id is not None:
-                    filtered = filter_viewable_score_ids(user, score_ids, score_id, lib_id)
-                    if filtered:
-                        return filtered
-    return resolve_score_view_ids(user, score_id)
 
 
 def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[str]) -> dict:
@@ -1783,6 +1754,29 @@ def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[
     }
 
 
+@app.post("/scores/<score_id>/viewer-ctx")
+@login_required
+def mint_viewer_ctx(score_id):
+    user = current_user()
+    meta = store.load_score_meta(score_id)
+    if not meta:
+        return json_error("Not found", 404)
+    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    score_ids = payload.get("score_ids")
+    if not isinstance(score_ids, list):
+        return json_error("Invalid score_ids", 400)
+    try:
+        lib_id = view_library_id(user)
+    except HTTPException:
+        abort(403)
+    filtered = filter_viewable_score_ids(user, score_ids, score_id, lib_id)
+    if not filtered:
+        return json_error("Forbidden", 403)
+    return jsonify({"ctx": encode_ctx(filtered, filtered.index(score_id))})
+
+
 @app.get("/scores/<score_id>/viewer")
 @login_required
 def score_viewer_data(score_id):
@@ -1792,7 +1786,7 @@ def score_viewer_data(score_id):
         return json_error("Not found", 404)
     if not policy.user_can_view_score(user, meta, view_library_id(user)):
         abort(403)
-    score_ids = score_ids_for_viewer(user, score_id)
+    score_ids = resolve_score_view_ids(user, score_id)
     return jsonify(build_viewer_payload(user, meta, score_id, score_ids))
 
 
@@ -1806,7 +1800,7 @@ def score_view(score_id):
     if not policy.user_can_view_score(user, meta, view_library_id(user)):
         abort(403)
     nav_query = score_view_nav_params_from_request()
-    score_ids = score_ids_for_viewer(user, score_id)
+    view_ctx = request.args.get("ctx", "")
     back_url = build_library_back_url(user, nav_query)
     main = store.get_main_file(meta)
     main_file_url = None
@@ -1818,7 +1812,7 @@ def score_view(score_id):
     return render_template(
         "score_view.html",
         score=meta,
-        score_ids=score_ids,
+        view_ctx=view_ctx,
         view_nav=nav_query,
         back_url=back_url,
         download_url=download_url,
@@ -1827,10 +1821,42 @@ def score_view(score_id):
     )
 
 
+def http_port() -> int:
+    return int(os.environ.get("PORT", DEFAULT_HTTP_PORT))
+
+
+def gunicorn_worker_count() -> int:
+    return int(os.environ.get(GUNICORN_WORKERS_ENV, DEFAULT_GUNICORN_WORKERS))
+
+
+def dev_mode_enabled(argv: list[str] | None = None) -> bool:
+    if os.environ.get(DEV_MODE_ENV) == "1":
+        return True
+    args = argv if argv is not None else sys.argv[1:]
+    return DEV_MODE_CLI_FLAG in args
+
+
+def run_dev_server() -> None:
+    app.run(host=GUNICORN_BIND_HOST, port=http_port(), debug=True)
+
+
+def run_production_server() -> None:
+    cmd = [
+        sys.executable,
+        "-m",
+        "gunicorn",
+        "-w",
+        str(gunicorn_worker_count()),
+        "-b",
+        f"{GUNICORN_BIND_HOST}:{http_port()}",
+        "app:app",
+    ]
+    raise SystemExit(subprocess.call(cmd))
+
+
 if __name__ == "__main__":
-    store.reload_data_dir_from_instance()
-    store.migrate_legacy_flat_layout()
-    store.migrate_all_opaque_score_ids()
-    if not store.needs_setup():
-        store.bootstrap_admin(password_secret())
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=os.environ.get("FLASK_DEBUG") == "1")
+    store.ensure_data_ready(password_secret())
+    if dev_mode_enabled():
+        run_dev_server()
+    else:
+        run_production_server()

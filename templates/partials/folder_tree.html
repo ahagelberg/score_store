@@ -9,7 +9,7 @@
       <div class="folder-tree-row">
         <a class="folder-tree-link{% if folder.id == 'root' %} active{% endif %}"
            data-folder-id="{{ folder.id }}"
-           style="--folder-depth: {{ depth }}"
+           data-depth="{{ depth }}"
            href="#">
           <span class="folder-tree-icon" aria-hidden="true">📁</span>
           <span class="folder-tree-name">{{ folder.name }}</span>

@@ -1,6 +1,7 @@
 """Filesystem JSON store for score portal."""
 
 import contextvars
+import fcntl
 import hashlib
 import json
 import os
@@ -8,6 +9,7 @@ import re
 import secrets
 import shutil
 import threading
+import time
 import base64
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,6 +74,8 @@ SCORE_RANDOM_ID_BYTES = 6
 FILE_RANDOM_ID_BYTES = 6
 STORED_NAME_RANDOM_BYTES = 16
 SLUG_IDS_MIGRATED_MARKER = ".opaque_ids_migrated"
+STARTUP_LOCK_FILENAME = ".startup.lock"
+DISK_USAGE_CACHE_TTL_SEC = 60
 MAIN_CONTENT_HASH_META_KEY = "main_content_hash"
 FILE_HASH_READ_BYTES = 65536
 BYTES_PER_SIZE_UNIT = 1024
@@ -90,6 +94,10 @@ LEGACY_STORED_NAME_PATTERN = re.compile(r"^[a-f0-9]{32}\.[a-z0-9]+$", re.I)
 
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
+_startup_guard = threading.Lock()
+_startup_done = False
+_disk_usage_cache: dict[str, tuple[float, dict]] = {}
+_disk_usage_cache_lock = threading.Lock()
 
 
 def _read_instance_config() -> dict:
@@ -348,16 +356,24 @@ def maestro_folder_size_bytes(maestro_username: str) -> int:
 
 def disk_usage_stats() -> dict:
     maestro_username = require_maestro_data()
+    now = time.monotonic()
+    with _disk_usage_cache_lock:
+        cached = _disk_usage_cache.get(maestro_username)
+        if cached and now - cached[0] < DISK_USAGE_CACHE_TTL_SEC:
+            return cached[1]
     base = maestro_data_dir(maestro_username)
     base.mkdir(parents=True, exist_ok=True)
     used_bytes = maestro_folder_size_bytes(maestro_username)
     _total, _fs_used, free_bytes = shutil.disk_usage(DATA_DIR)
-    return {
+    stats = {
         "used_bytes": used_bytes,
         "free_bytes": free_bytes,
         "used_label": format_byte_size(used_bytes),
         "free_label": format_byte_size(free_bytes),
     }
+    with _disk_usage_cache_lock:
+        _disk_usage_cache[maestro_username] = (now, stats)
+    return stats
 
 
 def _score_exists(score_id: str) -> bool:
@@ -535,6 +551,31 @@ def migrate_opaque_score_ids(maestro_username: str) -> bool:
 def migrate_all_opaque_score_ids() -> None:
     for maestro in get_maestro_accounts():
         migrate_opaque_score_ids(maestro["username"])
+
+
+def _run_startup_once(secret: str) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = DATA_DIR / STARTUP_LOCK_FILENAME
+    with open(lock_path, "w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            reload_data_dir_from_instance()
+            migrate_legacy_flat_layout()
+            migrate_all_opaque_score_ids()
+            bootstrap_admin(secret)
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def ensure_data_ready(secret: str) -> bool:
+    """One-shot migrations and env bootstrap; safe under multi-worker WSGI."""
+    global _startup_done
+    with _startup_guard:
+        if _startup_done:
+            return needs_setup()
+        _run_startup_once(secret)
+        _startup_done = True
+        return needs_setup()
 
 
 def _digest_stream(read_fn) -> str:

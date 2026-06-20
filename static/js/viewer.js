@@ -12,6 +12,8 @@
   const PDF_SCROLL_MODE_VERTICAL_PAGES = "vertical-pages";
   const PDF_SCROLL_MODE_HORIZONTAL = "horizontal";
   const PDF_SCROLL_MODE_STORAGE_KEY = "scorestore-pdf-scroll-mode";
+  const PDF_CAROUSEL_SPACER_START_CLASS = "viewer-pdf-carousel-spacer-start";
+  const PDF_CAROUSEL_SPACER_END_CLASS = "viewer-pdf-carousel-spacer-end";
   const PDF_SCROLL_MODES = [
     PDF_SCROLL_MODE_VERTICAL,
     PDF_SCROLL_MODE_VERTICAL_PAGES,
@@ -53,7 +55,7 @@
   let pdfScrollListeners = new WeakMap();
   let pdfRenderGeneration = 0;
   let pdfRelayoutScheduled = false;
-  let context = { scoreIds: [], navQuery: {} };
+  let context = { scoreIds: [], navQuery: {}, ctx: "" };
 
   function scoreViewPage() {
     return document.getElementById("score-view-page");
@@ -69,10 +71,21 @@
     return parseJsonAttr(page, "viewNav", {});
   }
 
-  function viewPageScoreIds() {
+  function viewPageCtx() {
     const page = scoreViewPage();
-    if (!page) return [];
-    return parseJsonAttr(page, "scoreIds", []);
+    if (!page) return "";
+    const fromData = page.dataset.ctx || "";
+    if (fromData) return fromData;
+    return new URLSearchParams(window.location.search).get("ctx") || "";
+  }
+
+  function ctxFromViewUrl(href) {
+    if (!href) return "";
+    try {
+      return new URL(href, window.location.origin).searchParams.get("ctx") || "";
+    } catch {
+      return "";
+    }
   }
 
   function updateViewPageUrl(scoreId) {
@@ -82,6 +95,7 @@
     Object.entries(context.navQuery).forEach(([key, value]) => {
       if (value) params.set(key, value);
     });
+    if (context.ctx) params.set("ctx", context.ctx);
     const qs = params.toString();
     const url = qs
       ? `/scores/${scoreId}/view?${qs}`
@@ -121,8 +135,31 @@
     Object.entries(context.navQuery).forEach(([key, value]) => {
       if (value) params.set(key, value);
     });
-    params.set("score_ids", JSON.stringify(context.scoreIds));
+    if (context.ctx) params.set("ctx", context.ctx);
     return `/scores/${scoreId}/viewer?${params.toString()}`;
+  }
+
+  async function mintViewerCtx(scoreId, scoreIds) {
+    const res = await window.Csrf.fetch(`/scores/${scoreId}/viewer-ctx`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ score_ids: scoreIds }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not open score");
+    return data.ctx || "";
+  }
+
+  async function resolveViewerCtx(scoreId, scoreIds, explicitCtx) {
+    if (context.ctx && context.scoreIds.includes(scoreId)) {
+      return context.ctx;
+    }
+    if (scoreIds?.length) {
+      return mintViewerCtx(scoreId, scoreIds);
+    }
+    if (explicitCtx) return explicitCtx;
+    if (context.ctx) return context.ctx;
+    return viewPageCtx();
   }
 
   function pdfLib() {
@@ -201,6 +238,9 @@
     mount.classList.toggle("viewer-pdf-scroll-vertical", mode === PDF_SCROLL_MODE_VERTICAL);
     mount.classList.toggle("viewer-pdf-scroll-vertical-pages", mode === PDF_SCROLL_MODE_VERTICAL_PAGES);
     mount.classList.toggle("viewer-pdf-scroll-horizontal", mode === PDF_SCROLL_MODE_HORIZONTAL);
+    if (mode !== PDF_SCROLL_MODE_HORIZONTAL) {
+      mount.querySelectorAll(".viewer-pdf-carousel-spacer").forEach((el) => el.remove());
+    }
   }
 
   function mountFitKey(mount, mode) {
@@ -228,18 +268,72 @@
       if (!slot) continue;
       slot.replaceChildren(createPageLoadingLabel());
       const { page, viewport } = await pageViewportForMode(pdf, pageNum, fit, mode);
-      slot.style.minHeight = `${viewport.height}px`;
+      slot.dataset.minH = String(Math.round(viewport.height));
       await renderPdfPageToSlot(slot, page, viewport, pageNum, totalPages);
     }
   }
 
-  function mountFitSize(mount, mode) {
-    const width = Math.max(mount.clientWidth || content.clientWidth, PDF_MIN_CONTAINER_WIDTH_PX);
-    if (isFitScreenPdfScrollMode(mode)) {
-      const height = Math.max(mount.clientHeight, PDF_MIN_CONTAINER_WIDTH_PX);
-      return { width, height };
+  function horizontalCarouselSpacer(mount, kind) {
+    const selector = kind === "start"
+      ? `.${PDF_CAROUSEL_SPACER_START_CLASS}`
+      : `.${PDF_CAROUSEL_SPACER_END_CLASS}`;
+    let spacer = mount.querySelector(selector);
+    if (spacer) return spacer;
+    spacer = document.createElement("div");
+    spacer.className = `viewer-pdf-carousel-spacer ${kind === "start" ? PDF_CAROUSEL_SPACER_START_CLASS : PDF_CAROUSEL_SPACER_END_CLASS}`;
+    spacer.setAttribute("aria-hidden", "true");
+    if (kind === "start") mount.prepend(spacer);
+    else mount.append(spacer);
+    return spacer;
+  }
+
+  function setHorizontalCarouselSpacerWidth(spacer, widthPx) {
+    const width = `${Math.round(widthPx)}px`;
+    spacer.style.flex = `0 0 ${width}`;
+    spacer.style.width = width;
+  }
+
+  function horizontalCarouselPageSlots(mount) {
+    return mount.querySelectorAll(".viewer-pdf-page-slot");
+  }
+
+  function syncHorizontalCarousel(mount, pageNum, smooth) {
+    if (!mount.classList.contains("viewer-pdf-scroll-horizontal")) return;
+    const viewportW = mount.clientWidth;
+    const slots = horizontalCarouselPageSlots(mount);
+    const firstSlot = slots[0];
+    const lastSlot = slots[slots.length - 1];
+    const padStart = firstSlot ? Math.max(0, (viewportW - firstSlot.offsetWidth) / 2) : 0;
+    const padEnd = lastSlot ? Math.max(0, (viewportW - lastSlot.offsetWidth) / 2) : 0;
+    setHorizontalCarouselSpacerWidth(horizontalCarouselSpacer(mount, "start"), padStart);
+    setHorizontalCarouselSpacerWidth(horizontalCarouselSpacer(mount, "end"), padEnd);
+    const targetPage = pageNum || currentPdfPage(mount);
+    const slot = mount.querySelector(`.viewer-pdf-page-slot[data-page-num="${targetPage}"]`);
+    if (!slot) return;
+    const slotCenter = slot.offsetLeft + slot.offsetWidth / 2;
+    const maxScroll = Math.max(0, mount.scrollWidth - viewportW);
+    const scrollLeft = Math.max(0, Math.min(slotCenter - viewportW / 2, maxScroll));
+    if (smooth && mount.scrollTo) {
+      mount.scrollTo({ left: scrollLeft, behavior: "smooth" });
+      return;
     }
-    return { width, height: null };
+    mount.scrollLeft = scrollLeft;
+  }
+
+  function mountFitSize(mount, mode) {
+    const frame = mount.closest(".viewer-pdf-frame");
+    const width = Math.max(
+      mount.clientWidth || frame?.clientWidth || content.clientWidth,
+      PDF_MIN_CONTAINER_WIDTH_PX,
+    );
+    if (!isFitScreenPdfScrollMode(mode)) {
+      return { width, height: null };
+    }
+    const height = Math.max(
+      mount.clientHeight || frame?.clientHeight || content.clientHeight,
+      PDF_MIN_CONTAINER_WIDTH_PX,
+    );
+    return { width, height };
   }
 
   function outputScale() {
@@ -250,7 +344,9 @@
     const page = await pdf.getPage(pageNum);
     const base = page.getViewport({ scale: 1 });
     let scale;
-    if (isFitScreenPdfScrollMode(mode)) {
+    if (mode === PDF_SCROLL_MODE_HORIZONTAL) {
+      scale = fit.height / base.height;
+    } else if (mode === PDF_SCROLL_MODE_VERTICAL_PAGES) {
       scale = Math.min(fit.width / base.width, fit.height / base.height);
     } else {
       scale = fit.width / base.width;
@@ -269,7 +365,7 @@
     const slot = document.createElement("div");
     slot.className = "viewer-pdf-page-slot";
     slot.dataset.pageNum = String(pageNum);
-    slot.style.minHeight = `${height}px`;
+    slot.dataset.minH = String(Math.round(height));
     slot.appendChild(createPageLoadingLabel());
     return slot;
   }
@@ -282,8 +378,8 @@
       const scale = outputScale();
       canvas.width = Math.floor(viewport.width * scale);
       canvas.height = Math.floor(viewport.height * scale);
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
+      canvas.style.width = `${Math.round(viewport.width)}px`;
+      canvas.style.height = `${Math.round(viewport.height)}px`;
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       await page.render({ canvasContext: ctx, viewport }).promise;
       slot.replaceChildren(canvas);
@@ -308,10 +404,14 @@
       ? mount.scrollLeft + mount.clientWidth / 2
       : mount.scrollTop + mount.clientHeight / 2;
     let current = 1;
+    let closestDistance = Infinity;
     mount.querySelectorAll(".viewer-pdf-page-slot").forEach((slot) => {
       const start = horizontal ? slot.offsetLeft : slot.offsetTop;
-      const end = start + (horizontal ? slot.offsetWidth : slot.offsetHeight);
-      if (viewMid >= start && viewMid < end) {
+      const size = horizontal ? slot.offsetWidth : slot.offsetHeight;
+      const center = start + size / 2;
+      const distance = Math.abs(viewMid - center);
+      if (distance < closestDistance) {
+        closestDistance = distance;
         current = Number(slot.dataset.pageNum) || current;
       }
     });
@@ -457,6 +557,11 @@
     if (generation !== pdfRenderGeneration) return;
     mount.dataset.rendered = "true";
     mount.dataset.fitKey = mountFitKey(mount, mode);
+    if (mode === PDF_SCROLL_MODE_HORIZONTAL) {
+      syncHorizontalCarousel(mount, focusPage, false);
+    } else {
+      scrollPdfToPage(mount, focusPage, false);
+    }
     syncPdfPageNavFromVisiblePane();
     updatePdfPageArrows(mount);
   }
@@ -494,12 +599,7 @@
     const slot = mount.querySelector(`.viewer-pdf-page-slot[data-page-num="${pageNum}"]`);
     if (!slot) return;
     if (mount.classList.contains("viewer-pdf-scroll-horizontal")) {
-      const left = slot.offsetLeft;
-      if (smooth && mount.scrollTo) {
-        mount.scrollTo({ left, behavior: "smooth" });
-        return;
-      }
-      mount.scrollLeft = left;
+      syncHorizontalCarousel(mount, pageNum, smooth);
       return;
     }
     const top = slot.offsetTop;
@@ -769,8 +869,14 @@
     }
   }
 
-  async function open(scoreId, scoreIds, navQuery) {
-    context = { scoreIds: scoreIds || [], navQuery: navQuery || {} };
+  async function open(scoreId, scoreIds, navQuery, explicitCtx) {
+    try {
+      const ctx = await resolveViewerCtx(scoreId, scoreIds, explicitCtx);
+      context = { scoreIds: scoreIds || [], navQuery: navQuery || {}, ctx };
+    } catch (err) {
+      showToast(err.message || "Could not open score", true);
+      return;
+    }
     clearPdfCache();
     const res = await fetch(viewerQuery(scoreId));
     const data = await res.json();
@@ -813,7 +919,8 @@
     if (!scoreId) return;
     const scoreIds = parseJsonAttr(workspace, "scoreIds", []);
     const navQuery = parseJsonAttr(workspace, "viewNav", {});
-    open(scoreId, scoreIds, navQuery);
+    const ctx = ctxFromViewUrl(btn.getAttribute("href") || btn.href);
+    open(scoreId, scoreIds, navQuery, ctx);
   }
 
   function bindSwipe() {
@@ -915,7 +1022,7 @@
     const page = scoreViewPage();
     if (page) {
       const scoreId = page.dataset.scoreId;
-      if (scoreId) open(scoreId, viewPageScoreIds(), viewPageNavQuery());
+      if (scoreId) open(scoreId, [], viewPageNavQuery(), viewPageCtx());
     }
   }
 

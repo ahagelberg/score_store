@@ -91,7 +91,7 @@
   function setFolderTreeItemDepth(item, depth) {
     item.dataset.depth = String(depth);
     const link = item.querySelector(":scope > .folder-tree-row > .folder-tree-link");
-    if (link) link.style.setProperty("--folder-depth", String(depth));
+    if (link) link.dataset.depth = String(depth);
     item.querySelectorAll(":scope > .folder-tree-children > .folder-tree-item").forEach((child) => {
       setFolderTreeItemDepth(child, depth + FOLDER_DEPTH_STEP);
     });
@@ -120,7 +120,7 @@
     link.className = "folder-tree-link";
     link.href = "#";
     link.dataset.folderId = folder.id;
-    link.style.setProperty("--folder-depth", String(depth));
+    link.dataset.depth = String(depth);
     const icon = document.createElement("span");
     icon.className = "folder-tree-icon";
     icon.setAttribute("aria-hidden", "true");

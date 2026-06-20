@@ -3,7 +3,7 @@
 {% block body %}
 <div id="score-view-page" class="score-view-page"
      data-score-id="{{ score.id }}"
-     data-score-ids='{{ score_ids|tojson }}'
+     data-ctx="{{ view_ctx }}"
      data-view-nav='{{ view_nav|tojson }}'
      data-back-url="{{ back_url }}">
   <header class="site-header score-view-header">

@@ -11,10 +11,12 @@ pip install -r requirements.txt
 
 export SECRET_KEY=change-me
 
-python app.py
+python app.py --dev
 ```
 
 Open http://localhost:5000 — on first run the **setup wizard** creates the platform admin account and storage path.
+
+**Production** (default): `python app.py` starts gunicorn. **Development**: add `--dev` or set `FLASK_DEBUG=1`.
 
 For automated/Docker deploy you can skip the wizard with environment variables (see below).
 
@@ -41,6 +43,8 @@ Server authorization rules live in `policy.py`. Routes should call those helpers
 | `USE_HTTPS=1` | Set `SESSION_COOKIE_SECURE` for HTTPS deployments |
 | `DATA_DIR` | Default storage path before wizard runs (default: `./data`) |
 | `PORT` | HTTP port (default: 5000) |
+| `GUNICORN_WORKERS` | Gunicorn worker count when not in dev mode (default: 4) |
+| `FLASK_DEBUG=1` | Dev mode: Flask built-in server with reload and debugger |
 
 Storage path chosen in the setup wizard is saved to `instance/config.json` and used on subsequent starts.
 
