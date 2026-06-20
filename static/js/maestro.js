@@ -130,6 +130,12 @@
       });
     });
 
+    document.querySelectorAll(".user-handout-tree-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openHandoutDialog(btn.dataset.userId);
+      });
+    });
+
     const roleEl = document.getElementById("user-role");
     const pw = document.getElementById("user-password");
     const hint = document.getElementById("user-password-hint");
@@ -185,6 +191,13 @@
       handoutPdfBtn.addEventListener("click", () => {
         if (!handoutUserId) return;
         window.open(`/maestro/users/${handoutUserId}/handout.pdf`, "_blank", "noopener");
+      });
+    }
+
+    const handoutPrintBtn = document.getElementById("user-handout-print-btn");
+    if (handoutPrintBtn) {
+      handoutPrintBtn.addEventListener("click", () => {
+        window.print();
       });
     }
 

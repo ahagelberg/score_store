@@ -1587,6 +1587,32 @@ body.score-viewer-open .score-editor-preview-float {
   margin-top: 0.35rem;
 }
 
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #user-handout-overlay,
+  #user-handout-overlay * {
+    visibility: visible;
+  }
+
+  #user-handout-overlay {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+  }
+
+  #user-handout-overlay.hidden {
+    display: block !important;
+  }
+
+  .user-handout-dialog .dialog-actions,
+  .user-handout-dialog-heading {
+    display: none !important;
+  }
+}
+
 /* Maestro layout */
 .maestro-layout {
   display: grid;

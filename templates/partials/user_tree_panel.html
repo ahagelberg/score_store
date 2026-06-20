@@ -48,6 +48,9 @@
               {% if child.role %}<span class="user-tree-role">{{ child.role }}</span>{% endif %}
             </a>
             {% if tree_ctx.show_user_edit and child.kind == "user" %}
+            <button type="button" class="btn-icon btn-icon-sm user-handout-tree-btn"
+                    data-user-id="{{ child.id }}"
+                    title="Login card" aria-label="Login card">⎙</button>
             <button type="button" class="btn-icon btn-icon-sm user-edit-btn"
                     data-user-id="{{ child.id }}"
                     data-display-name="{{ child.display_name }}"
@@ -75,6 +78,9 @@
           <span class="user-tree-role">{{ node.role }}</span>
         </a>
         {% if tree_ctx.show_user_edit %}
+        <button type="button" class="btn-icon btn-icon-sm user-handout-tree-btn"
+                data-user-id="{{ node.id }}"
+                title="Login card" aria-label="Login card">⎙</button>
         <button type="button" class="btn-icon btn-icon-sm user-edit-btn"
                 data-user-id="{{ node.id }}"
                 data-display-name="{{ node.display_name }}"

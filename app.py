@@ -129,7 +129,21 @@ def preview_request_active() -> bool:
 
 
 def preview_mutations_blocked() -> bool:
-    return preview_request_active()
+    if not preview_request_active():
+        return False
+    actor = maestro_management_actor()
+    return not (actor and policy.is_maestro(current_user()))
+
+
+def maestro_management_actor() -> dict | None:
+    session = session_user()
+    if session and policy.is_maestro(session):
+        return session
+    if preview_request_active():
+        effective = current_user()
+        if effective and policy.is_maestro(effective):
+            return effective
+    return None
 
 
 def login_required(view):
@@ -1011,14 +1025,14 @@ def maestro():
             draggable_score=True,
             assign_user=selected_user,
         )
-    preview_active = preview_request_active()
+    can_manage_users = maestro_management_actor() is not None
     tree_ctx = {
         "show_maestro_nodes": False,
         "show_global_library_nodes": False,
-        "show_user_edit": not preview_active,
+        "show_user_edit": can_manage_users,
         "show_maestro_actions": False,
         "show_user_preview": False,
-        "drop_target_users": not preview_active,
+        "drop_target_users": can_manage_users,
         "nav_endpoint": "maestro",
         "maestro_id": user["id"],
         "query": query,
@@ -1039,9 +1053,11 @@ def maestro():
 
 
 @app.post("/maestro/users/new")
-@role_required(store.MAESTRO_ROLE)
+@login_required
 def maestro_user_new():
-    actor = account_user()
+    actor = maestro_management_actor()
+    if not actor:
+        abort(403)
     display_name = request.form.get("display_name", "").strip()
     username = request.form.get("username", "").strip().lower()
     password = request.form.get("password", "")
@@ -1062,9 +1078,11 @@ def maestro_user_new():
 
 
 @app.post("/maestro/users/<user_id>/edit")
-@role_required(store.MAESTRO_ROLE)
+@login_required
 def maestro_user_edit(user_id):
-    actor = account_user()
+    actor = maestro_management_actor()
+    if not actor:
+        abort(403)
     user = store.get_user(user_id)
     if not user or not policy.user_owns_sub_account(actor, user):
         abort(404)
@@ -1107,9 +1125,11 @@ def maestro_user_edit(user_id):
 
 
 @app.post("/maestro/users/<user_id>/delete")
-@role_required(store.MAESTRO_ROLE)
+@login_required
 def maestro_user_delete(user_id):
-    actor = account_user()
+    actor = maestro_management_actor()
+    if not actor:
+        abort(403)
     target = store.get_user(user_id)
     if not target or not policy.user_owns_sub_account(actor, target):
         abort(404)
@@ -1368,7 +1388,9 @@ def maestro_change_password():
 
 
 def _user_handout_context(user_id: str) -> dict:
-    actor = current_user()
+    actor = maestro_management_actor()
+    if not actor:
+        abort(403)
     user = store.get_user(user_id)
     if not user or user.get("role") not in store.SUB_ACCOUNT_ROLES:
         abort(404)
@@ -1402,10 +1424,10 @@ def maestro_user_handout_pdf(user_id):
 
 
 @app.post("/maestro/assign")
-@role_required(store.MAESTRO_ROLE)
+@login_required
 def maestro_assign():
-    user = account_user()
-    if not policy.user_can_assign_scores(user):
+    user = maestro_management_actor()
+    if not user or not policy.user_can_assign_scores(user):
         abort(403)
     data = request.get_json(silent=True) or {}
     score_id = data.get("score_id")
