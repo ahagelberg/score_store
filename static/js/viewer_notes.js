@@ -33,7 +33,7 @@
   const NOTE_FLAG_MID_Y_RATIO = 0.55;
   const SYMBOL_ANCHOR_CENTER = "center";
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const DRAG_MOVE_SYMBOL = "move-symbol";
+  const DRAG_MOVE_ANNOTATION = "move-annotation";
   const PEN_WIDTH_RATIOS = [0.0008, 0.0015, 0.0025, 0.004, 0.006];
   const DEFAULT_PEN_WIDTH_INDEX = 1;
   const MIN_PEN_POINT_DISTANCE = 0.002;
@@ -607,18 +607,26 @@
     renderSlotNotes(slot, pageNum);
   }
 
-  function startSymbolMove(slot, layer, pageNum, annId, pointerId, norm) {
+  function startAnnotationMove(slot, layer, pageNum, annId, pointerId, norm) {
     const ann = annotationById(pageNum, annId);
-    if (!ann || ann.type !== TOOL_SYMBOL) return false;
-    layer.setPointerCapture(pointerId);
-    dragState = {
+    if (!ann) return false;
+    const moveState = {
       slot,
       pageNum,
-      tool: DRAG_MOVE_SYMBOL,
+      tool: DRAG_MOVE_ANNOTATION,
       pointerId,
       annId,
-      grabOffset: { x: norm.x - ann.x, y: norm.y - ann.y },
     };
+    if (ann.type === TOOL_PEN && ann.points?.length) {
+      moveState.grabStart = { x: norm.x, y: norm.y };
+      moveState.originalPoints = ann.points.map((pt) => [pt[0], pt[1]]);
+    } else if (ann.type === TOOL_HIGHLIGHT || (ann.x != null && ann.y != null)) {
+      moveState.grabOffset = { x: norm.x - ann.x, y: norm.y - ann.y };
+    } else {
+      return false;
+    }
+    layer.setPointerCapture(pointerId);
+    dragState = moveState;
     slot.querySelector(`.viewer-notes-mark[data-ann-id="${annId}"]`)
       ?.classList.add("viewer-notes-mark-dragging");
     return true;
@@ -640,13 +648,9 @@
         return;
       }
       const hitId = hitAnnotation(slot, pageNum, e.clientX, e.clientY);
-      if (hitId) {
-        const hitAnn = annotationById(pageNum, hitId);
-        if (hitAnn?.type === TOOL_SYMBOL) {
-          e.preventDefault();
-          startSymbolMove(slot, layer, pageNum, hitId, e.pointerId, norm);
-          return;
-        }
+      if (hitId && startAnnotationMove(slot, layer, pageNum, hitId, e.pointerId, norm)) {
+        e.preventDefault();
+        return;
       }
       if (activeTool === TOOL_TEXT) {
         e.preventDefault();
@@ -692,11 +696,20 @@
       if (!dragState || dragState.pointerId !== e.pointerId) return;
       const norm = normFromEvent(dragState.slot, e.clientX, e.clientY);
       dragState.current = norm;
-      if (dragState.tool === DRAG_MOVE_SYMBOL) {
+      if (dragState.tool === DRAG_MOVE_ANNOTATION) {
         const ann = annotationById(dragState.pageNum, dragState.annId);
         if (ann) {
-          ann.x = clampNorm(norm.x - dragState.grabOffset.x);
-          ann.y = clampNorm(norm.y - dragState.grabOffset.y);
+          if (ann.type === TOOL_PEN && dragState.originalPoints) {
+            const dx = norm.x - dragState.grabStart.x;
+            const dy = norm.y - dragState.grabStart.y;
+            ann.points = dragState.originalPoints.map((pt) => [
+              clampNorm(pt[0] + dx),
+              clampNorm(pt[1] + dy),
+            ]);
+          } else if (dragState.grabOffset) {
+            ann.x = clampNorm(norm.x - dragState.grabOffset.x);
+            ann.y = clampNorm(norm.y - dragState.grabOffset.y);
+          }
           renderSlotNotes(dragState.slot, dragState.pageNum);
           dragState.slot.querySelector(`.viewer-notes-mark[data-ann-id="${dragState.annId}"]`)
             ?.classList.add("viewer-notes-mark-dragging");
@@ -745,7 +758,7 @@
       } catch {
         /* pointer already released */
       }
-      if (tool === DRAG_MOVE_SYMBOL) {
+      if (tool === DRAG_MOVE_ANNOTATION) {
         dragSlot.querySelector(".viewer-notes-mark-dragging")
           ?.classList.remove("viewer-notes-mark-dragging");
         scheduleSave();
@@ -950,10 +963,15 @@
     updateSymbolButtons();
   }
 
+  function isNotesModeActive() {
+    return notesModeActive;
+  }
+
   function setNotesMode(active) {
     notesModeActive = active;
     notesToggleBtn?.classList.toggle("active", active);
     notesToolbar?.classList.toggle("hidden", !active);
+    document.getElementById("score-viewer-panel")?.classList.toggle("viewer-notes-mode-active", active);
     document.querySelectorAll(".viewer-notes-layer").forEach((layer) => {
       layer.classList.toggle("viewer-notes-layer-editable", active);
     });
@@ -1040,5 +1058,6 @@
     onPaneChange,
     onPageSlotReady,
     setNotesMode,
+    isNotesModeActive,
   };
 })();

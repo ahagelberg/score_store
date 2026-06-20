@@ -946,6 +946,7 @@
       const dy = e.changedTouches[0].screenY - startY;
       startX = null;
       startY = null;
+      if (window.ScoreViewerNotes?.isNotesModeActive()) return;
       if (swipeTarget?.closest(".viewer-pdf-frame")) return;
       if (Math.abs(dx) < SWIPE_THRESHOLD_PX) return;
       if (Math.abs(dx) < Math.abs(dy) * SWIPE_HORIZONTAL_DOMINANCE) return;

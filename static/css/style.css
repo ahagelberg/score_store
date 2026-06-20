@@ -2158,6 +2158,12 @@ body.score-viewer-open {
   height: 100%;
 }
 
+.viewer-notes-mode-active .viewer-pdf-mount.viewer-pdf-scroll-horizontal,
+.viewer-notes-mode-active .viewer-pdf-mount.viewer-pdf-scroll-vertical-pages {
+  overflow: hidden;
+  touch-action: none;
+}
+
 .viewer-pdf-page-arrows {
   position: absolute;
   inset: 0;
