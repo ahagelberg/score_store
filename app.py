@@ -3,6 +3,7 @@
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
 from functools import wraps
@@ -57,6 +58,7 @@ GUNICORN_BIND_HOST = "0.0.0.0"
 DEV_MODE_ENV = "FLASK_DEBUG"
 DEV_MODE_CLI_FLAG = "--dev"
 GUNICORN_WORKERS_ENV = "GUNICORN_WORKERS"
+GUNICORN_SHUTDOWN_WAIT_SEC = 5
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -295,6 +297,18 @@ def view_library_id(user: dict) -> str:
         else:
             library_ctx = f"{LIBRARY_CTX_USER_PREFIX}{user['id']}"
     return _resolve_library_ctx(user, library_ctx)
+
+
+def notes_storage_for_user(user: dict | None) -> str:
+    if not user:
+        return "none"
+    if policy.is_admin(user) and not preview_request_active():
+        return "none"
+    if policy.is_choir(user):
+        return "local"
+    if policy.is_singer(user) or policy.is_maestro(user):
+        return "server"
+    return "none"
 
 
 def resolve_score_view_ids(user: dict, score_id: str) -> list[str]:
@@ -745,7 +759,7 @@ def _activate_maestro_data_scope():
 
 @app.before_request
 def _block_preview_mutations():
-    if request.method != "POST":
+    if request.method not in ("POST", "PUT"):
         return
     if request.endpoint in _SETUP_EXEMPT or request.endpoint == "static":
         return
@@ -814,6 +828,7 @@ def inject_globals():
         "maestro_brand": brand,
         "preview_mode": preview_mode,
         "preview_user": preview_user,
+        "notes_storage": notes_storage_for_user(user),
     }
 
 
@@ -1791,6 +1806,39 @@ def score_viewer_data(score_id):
     return jsonify(build_viewer_payload(user, meta, score_id, score_ids))
 
 
+@app.get("/scores/<score_id>/notes")
+@login_required
+def score_notes_get(score_id):
+    user = current_user()
+    if notes_storage_for_user(user) != "server":
+        abort(403)
+    meta = store.load_score_meta(score_id)
+    if not meta:
+        return json_error("Not found", 404)
+    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+        abort(403)
+    return jsonify(store.get_score_notes(user["id"], score_id))
+
+
+@app.put("/scores/<score_id>/notes")
+@login_required
+def score_notes_put(score_id):
+    user = current_user()
+    if notes_storage_for_user(user) != "server":
+        abort(403)
+    meta = store.load_score_meta(score_id)
+    if not meta:
+        return json_error("Not found", 404)
+    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    files = payload.get("files")
+    if not isinstance(files, dict):
+        return json_error("Invalid notes payload", 400)
+    store.set_score_notes(user["id"], score_id, {"files": files})
+    return jsonify({"ok": True})
+
+
 @app.route("/scores/<score_id>/view")
 @login_required
 def score_view(score_id):
@@ -1838,7 +1886,10 @@ def dev_mode_enabled(argv: list[str] | None = None) -> bool:
 
 
 def run_dev_server() -> None:
-    app.run(host=GUNICORN_BIND_HOST, port=http_port(), debug=True)
+    try:
+        app.run(host=GUNICORN_BIND_HOST, port=http_port(), debug=True)
+    except KeyboardInterrupt:
+        raise SystemExit(0) from None
 
 
 def run_production_server() -> None:
@@ -1852,7 +1903,18 @@ def run_production_server() -> None:
         f"{GUNICORN_BIND_HOST}:{http_port()}",
         "app:app",
     ]
-    raise SystemExit(subprocess.call(cmd))
+    proc = subprocess.Popen(cmd)
+    try:
+        status = proc.wait()
+    except KeyboardInterrupt:
+        proc.send_signal(signal.SIGINT)
+        try:
+            proc.wait(timeout=GUNICORN_SHUTDOWN_WAIT_SEC)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        status = 0
+    raise SystemExit(status)
 
 
 if __name__ == "__main__":
