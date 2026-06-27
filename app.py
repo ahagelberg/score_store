@@ -577,6 +577,30 @@ def user_tree_node_url(endpoint: str, node: dict, query: str = "", active_tag: s
     return build_nav_url(endpoint, query=query, active_tag=active_tag or "", preserve=preserve)
 
 
+def resolve_maestro_username(user: User | None) -> str | None:
+    if not user:
+        return None
+    if user.is_admin():
+        maestro_param = request.args.get("maestro", "").strip().lower()
+        return maestro_param or None
+    if user.is_maestro():
+        return user.username
+    if user.role in store.SUB_ACCOUNT_ROLES:
+        try:
+            return store.maestro_folder_username(user)
+        except ValueError:
+            return None
+    return None
+
+
+def maestro_library_features_for_user(user: User | None) -> dict[str, bool]:
+    username = resolve_maestro_username(user)
+    if not username:
+        return store.maestro_library_features({})
+    cfg = store.load_maestro_config(username)
+    return store.maestro_library_features(cfg)
+
+
 def resolve_maestro_brand(user: User | None) -> dict | None:
     if not user:
         return None
@@ -639,6 +663,11 @@ def append_scope_query_params(url: str) -> str:
         return url
     sep = "&" if "?" in url else "?"
     return f"{url}{sep}{urlencode(extra)}"
+
+
+@app.template_global()
+def scoped_url(endpoint: str, **values):
+    return append_scope_query_params(url_for(endpoint, **values))
 
 
 def admin_maestro_logotype_url(maestro_username: str) -> str | None:
@@ -980,6 +1009,15 @@ def user_password_display(user):
     return store.password_for_display(user)
 
 
+def maestro_settings_for_user(user: User | None) -> dict | None:
+    if not user or not user.is_maestro():
+        return None
+    cfg = store.load_maestro_config(user.username)
+    theme_path = store.maestro_theme_path(user.username)
+    theme_css = theme_path.read_text(encoding="utf-8") if theme_path.is_file() else ""
+    return {"config": cfg, "theme_css": theme_css}
+
+
 @app.context_processor
 def inject_globals():
     user = current_user()
@@ -998,6 +1036,8 @@ def inject_globals():
         "current_user": user,
         "password_min_len": store.SETUP_PASSWORD_MIN_LEN,
         "maestro_brand": brand,
+        "maestro_library_features": maestro_library_features_for_user(user),
+        "maestro_settings": maestro_settings_for_user(user),
         "page_theme": page_theme,
         "preview_mode": preview_mode,
         "preview_user": preview_user,
@@ -1442,47 +1482,60 @@ def admin_change_password():
     return redirect(safe_redirect_target(request.referrer, url_for("admin")))
 
 
+@app.route("/maestro/config", methods=["GET", "POST"])
+@maestro_scope_required
+def maestro_config():
+    user = current_user()
+    username = user.username
+    if request.method == "GET":
+        return redirect(append_scope_query_params(url_for("maestro")))
+    if not policy.user_can_edit_maestro_config(user, username):
+        abort(403)
+    cfg = store.load_maestro_config(username)
+    cfg["enable_printing"] = store.form_show_site_title_checked(request.form.get("enable_printing"))
+    cfg["enable_download"] = store.form_show_site_title_checked(request.form.get("enable_download"))
+    store.save_maestro_config(username, cfg)
+    if ajax_request():
+        features = store.maestro_library_features(cfg)
+        return jsonify({"ok": True, "message": "Config saved", "features": features})
+    flash("Config saved", "success")
+    return redirect(append_scope_query_params(url_for("maestro")))
+
+
 @app.route("/maestro/appearance", methods=["GET", "POST"])
-@role_required(store.MAESTRO_ROLE)
+@maestro_scope_required
 def maestro_appearance():
     user = current_user()
     username = user.username
-    if request.method == "POST":
-        if not policy.user_can_edit_maestro_config(user, username):
-            abort(403)
-        site_title = request.form.get("site_title", "").strip()
-        cfg = store.load_maestro_config(username)
-        cfg["site_title"] = site_title or user.display_name
-        cfg["show_site_title"] = store.form_show_site_title_checked(request.form.get("show_site_title"))
-        theme_text = request.form.get("theme_css_text", "")
-        if theme_text.strip():
-            store.maestro_theme_path(username).write_text(theme_text, encoding="utf-8")
-        theme_upload = request.files.get("theme_css")
-        if theme_upload and theme_upload.filename:
-            theme_upload.save(store.maestro_theme_path(username))
-        logotype_upload = request.files.get("logotype")
-        if logotype_upload and logotype_upload.filename:
-            ext = store.extension_of(logotype_upload.filename)
-            if ext in store.LOGOTYPE_EXTENSIONS:
-                dest = store.maestro_data_dir(username) / store.MAESTRO_ASSETS_DIRNAME / f"{store.LOGOTYPE_STORED_BASENAME}.{ext}"
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                logotype_upload.save(dest)
-                cfg["logotype"] = f"{store.MAESTRO_ASSETS_DIRNAME}/{store.LOGOTYPE_STORED_BASENAME}.{ext}"
-        if request.form.get("remove_logotype") == "1":
-            cfg["logotype"] = ""
-        store.save_maestro_config(username, cfg)
-        flash("Appearance saved", "success")
-        return redirect(url_for("maestro_appearance"))
+    if request.method == "GET":
+        return redirect(append_scope_query_params(url_for("maestro")))
+    if not policy.user_can_edit_maestro_config(user, username):
+        abort(403)
+    site_title = request.form.get("site_title", "").strip()
     cfg = store.load_maestro_config(username)
-    theme_css = ""
-    theme_path = store.maestro_theme_path(username)
-    if theme_path.is_file():
-        theme_css = theme_path.read_text(encoding="utf-8")
-    return render_template(
-        "maestro_appearance.html",
-        config=cfg,
-        theme_css=theme_css,
-    )
+    cfg["site_title"] = site_title or user.display_name
+    cfg["show_site_title"] = store.form_show_site_title_checked(request.form.get("show_site_title"))
+    theme_text = request.form.get("theme_css_text", "")
+    if theme_text.strip():
+        store.maestro_theme_path(username).write_text(theme_text, encoding="utf-8")
+    theme_upload = request.files.get("theme_css")
+    if theme_upload and theme_upload.filename:
+        theme_upload.save(store.maestro_theme_path(username))
+    logotype_upload = request.files.get("logotype")
+    if logotype_upload and logotype_upload.filename:
+        ext = store.extension_of(logotype_upload.filename)
+        if ext in store.LOGOTYPE_EXTENSIONS:
+            dest = store.maestro_data_dir(username) / store.MAESTRO_ASSETS_DIRNAME / f"{store.LOGOTYPE_STORED_BASENAME}.{ext}"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            logotype_upload.save(dest)
+            cfg["logotype"] = f"{store.MAESTRO_ASSETS_DIRNAME}/{store.LOGOTYPE_STORED_BASENAME}.{ext}"
+    if request.form.get("remove_logotype") == "1":
+        cfg["logotype"] = ""
+    store.save_maestro_config(username, cfg)
+    if ajax_request():
+        return jsonify({"ok": True, "message": "Appearance saved"})
+    flash("Appearance saved", "success")
+    return redirect(append_scope_query_params(url_for("maestro")))
 
 
 @app.get("/maestro-assets/<maestro_username>/theme.css")
@@ -1509,31 +1562,38 @@ def maestro_logotype(maestro_username):
     return send_file(path)
 
 
+def maestro_password_error(message: str):
+    if ajax_request():
+        return jsonify({"error": message}), 400
+    flash(message, "error")
+    return redirect(safe_redirect_target(request.referrer, append_scope_query_params(url_for("maestro"))))
+
+
 @app.post("/maestro/password")
-@role_required(store.MAESTRO_ROLE)
+@login_required
 def maestro_change_password():
-    user = account_user()
+    user = current_user()
+    if not user or not user.is_maestro():
+        abort(403)
     current_password = request.form.get("current_password", "")
     new_password = request.form.get("new_password", "")
     confirm_password = request.form.get("new_password_confirm", "")
     if not current_password or not new_password:
-        flash("Current and new password required", "error")
-        return redirect(safe_redirect_target(request.referrer, url_for("maestro")))
+        return maestro_password_error("Current and new password required")
     if new_password != confirm_password:
-        flash("New passwords do not match", "error")
-        return redirect(safe_redirect_target(request.referrer, url_for("maestro")))
+        return maestro_password_error("New passwords do not match")
     if len(new_password) < store.SETUP_PASSWORD_MIN_LEN:
-        flash(f"Password must be at least {store.SETUP_PASSWORD_MIN_LEN} characters", "error")
-        return redirect(safe_redirect_target(request.referrer, url_for("maestro")))
+        return maestro_password_error(f"Password must be at least {store.SETUP_PASSWORD_MIN_LEN} characters")
     stored = store.get_user(user.id)
     secret = password_secret()
     if not stored or not store.verify_user_password(stored, current_password, secret):
-        flash("Current password is wrong", "error")
-        return redirect(safe_redirect_target(request.referrer, url_for("maestro")))
+        return maestro_password_error("Current password is wrong")
     store.set_user_password(stored, new_password, secret)
     store.upsert_user(stored)
+    if ajax_request():
+        return jsonify({"ok": True, "message": "Password updated"})
     flash("Password updated", "success")
-    return redirect(safe_redirect_target(request.referrer, url_for("maestro")))
+    return redirect(safe_redirect_target(request.referrer, append_scope_query_params(url_for("maestro"))))
 
 
 def _user_handout_context(user_id: str) -> dict:
@@ -1931,6 +1991,7 @@ def build_viewer_payload(user: User, score: Score, score_id: str, score_ids: lis
             next_score = store.load_score_meta(nav["next_id"])
             nav["next_title"] = next_score.title if next_score else None
     download_url = append_scope_query_params(url_for("score_download", score_id=score_id)) if main else None
+    features = maestro_library_features_for_user(user)
     return {
         "score": {
             "id": score_id,
@@ -1944,6 +2005,8 @@ def build_viewer_payload(user: User, score: Score, score_id: str, score_ids: lis
         "nav": nav,
         "score_ids": score_ids,
         "download_url": download_url,
+        "enable_printing": features["enable_printing"],
+        "enable_download": features["enable_download"],
     }
 
 

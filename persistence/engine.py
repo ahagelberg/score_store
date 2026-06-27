@@ -674,6 +674,8 @@ def save_maestro_config(maestro_username: str, config: dict) -> None:
         "site_title": (config.get("site_title") or "").strip(),
         "logotype": (config.get("logotype") or "").strip(),
         "show_site_title": bool(config.get("show_site_title", DEFAULT_SHOW_SITE_TITLE)),
+        "enable_printing": bool(config.get("enable_printing", c.DEFAULT_ENABLE_PRINTING)),
+        "enable_download": bool(config.get("enable_download", c.DEFAULT_ENABLE_DOWNLOAD)),
     }
     if not payload["site_title"]:
         user = get_user_by_username(uname)

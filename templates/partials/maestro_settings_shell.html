@@ -1,0 +1,83 @@
+<div class="action-sheet-overlay hidden" id="maestro-menu-overlay" aria-hidden="true">
+  <button type="button" class="action-sheet-backdrop" data-maestro-menu-close aria-label="Close menu"></button>
+  <div class="action-sheet" role="dialog" aria-labelledby="maestro-menu-title">
+    <div class="action-sheet-handle" aria-hidden="true"></div>
+    <p class="action-sheet-title" id="maestro-menu-title">{{ current_user.display_name }}</p>
+    <ul class="action-sheet-list">
+      <li><button type="button" class="action-sheet-item" data-maestro-menu-panel="config">Library config</button></li>
+      <li><button type="button" class="action-sheet-item" data-maestro-menu-panel="appearance">Site appearance</button></li>
+      <li><button type="button" class="action-sheet-item" data-maestro-menu-panel="password">Change password</button></li>
+    </ul>
+    <ul class="action-sheet-list action-sheet-list-separated">
+      <li><a class="action-sheet-item action-sheet-item-danger" href="{{ url_for('logout') }}">Log out</a></li>
+    </ul>
+    <button type="button" class="action-sheet-cancel" data-maestro-menu-close>Cancel</button>
+  </div>
+</div>
+
+<div class="dialog-overlay hidden" id="maestro-config-overlay" data-dialog="maestro-config" aria-hidden="true">
+  <div class="dialog maestro-settings-dialog" role="dialog" aria-labelledby="maestro-config-title">
+    <h2 id="maestro-config-title">Library config</h2>
+    <form id="maestro-config-form" method="post" action="{{ scoped_url('maestro_config') }}">
+      {% include "partials/csrf_field.html" %}
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" name="enable_printing" value="1"{% if maestro_settings.config.enable_printing %} checked{% endif %}>
+          Enable printing
+        </label>
+        <small class="field-hint">Show print buttons on score rows and in the viewer.</small>
+      </div>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" name="enable_download" value="1"{% if maestro_settings.config.enable_download %} checked{% endif %}>
+          Enable download
+        </label>
+        <small class="field-hint">Show download buttons on score rows and in the viewer.</small>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-maestro-settings-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="dialog-overlay hidden" id="maestro-appearance-overlay" data-dialog="maestro-appearance" aria-hidden="true">
+  <div class="dialog maestro-settings-dialog maestro-appearance-dialog" role="dialog" aria-labelledby="maestro-appearance-title">
+    <h2 id="maestro-appearance-title">Site appearance</h2>
+    <form id="maestro-appearance-form" method="post" action="{{ scoped_url('maestro_appearance') }}" enctype="multipart/form-data">
+      {% include "partials/csrf_field.html" %}
+      <div class="form-group">
+        <label for="maestro-settings-site-title">Site title</label>
+        <input class="form-control" type="text" id="maestro-settings-site-title" name="site_title" value="{{ maestro_settings.config.site_title }}" required>
+        <label class="checkbox-label">
+          <input type="checkbox" name="show_site_title" value="1"{% if maestro_settings.config.show_site_title %} checked{% endif %}>
+          Show site title in header next to logotype
+        </label>
+        <small class="field-hint">Uncheck when the logotype already includes the site name.</small>
+      </div>
+      <div class="form-group">
+        <label for="maestro-settings-logotype">Logotype</label>
+        <input class="form-control" type="file" id="maestro-settings-logotype" name="logotype" accept="image/*">
+        {% if maestro_settings.config.logotype %}
+        <label class="checkbox-label"><input type="checkbox" name="remove_logotype" value="1"> Remove logotype</label>
+        {% endif %}
+      </div>
+      <div class="form-group">
+        <label for="maestro-settings-theme-css">Theme CSS</label>
+        <textarea class="form-control theme-css-editor" id="maestro-settings-theme-css" name="theme_css_text" rows="8">{{ maestro_settings.theme_css }}</textarea>
+        <small class="field-hint">Override CSS variables such as --color-primary, --color-bg, --color-accent-bg.</small>
+      </div>
+      <div class="form-group">
+        <label for="maestro-settings-theme-file">Or upload theme.css</label>
+        <input class="form-control" type="file" id="maestro-settings-theme-file" name="theme_css" accept=".css,text/css">
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-maestro-settings-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% include "partials/maestro_password_dialog.html" %}

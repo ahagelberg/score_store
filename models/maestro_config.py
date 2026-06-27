@@ -16,16 +16,22 @@ class MaestroConfig(JsonModel):
         site_title: str,
         logotype: str = "",
         show_site_title: bool = c.DEFAULT_SHOW_SITE_TITLE,
+        enable_printing: bool = c.DEFAULT_ENABLE_PRINTING,
+        enable_download: bool = c.DEFAULT_ENABLE_DOWNLOAD,
     ):
         self.site_title = site_title
         self.logotype = logotype
         self.show_site_title = show_site_title
+        self.enable_printing = enable_printing
+        self.enable_download = enable_download
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "site_title": self.site_title,
             "logotype": self.logotype,
             "show_site_title": self.show_site_title,
+            "enable_printing": self.enable_printing,
+            "enable_download": self.enable_download,
         }
 
     @classmethod
@@ -34,9 +40,17 @@ class MaestroConfig(JsonModel):
             data.get("site_title", ""),
             data.get("logotype", ""),
             bool(data.get("show_site_title", c.DEFAULT_SHOW_SITE_TITLE)),
+            bool(data.get("enable_printing", c.DEFAULT_ENABLE_PRINTING)),
+            bool(data.get("enable_download", c.DEFAULT_ENABLE_DOWNLOAD)),
         )
 
     def header_show_title(self, has_logotype: bool) -> bool:
         if self.show_site_title:
             return True
         return not has_logotype
+
+    def library_features(self) -> dict[str, bool]:
+        return {
+            "enable_printing": self.enable_printing,
+            "enable_download": self.enable_download,
+        }

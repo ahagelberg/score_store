@@ -50,6 +50,12 @@
   --library-panel-min-height-mobile: 50vh;
   --tap-min: 44px;
   --icon-download-size: 18px;
+  --icon-gear-size: 20px;
+  --action-sheet-backdrop-opacity: 0.45;
+  --action-sheet-radius: 16px;
+  --action-sheet-handle-width: 36px;
+  --action-sheet-handle-height: 4px;
+  --action-sheet-max-width: 480px;
   --viewer-header-icon-btn-size: 28px;
   --viewer-header-icon-size: 20px;
   --viewer-file-icon-size: 16px;
@@ -173,12 +179,13 @@ a:hover {
   border-left: 1px solid var(--color-border);
 }
 
-.site-header nav {
+.site-header-nav {
   display: flex;
+  flex-shrink: 0;
   gap: 12px;
   align-items: center;
   font-size: 12px;
-  margin-left:24px;
+  margin-left: 12px;
 }
 
 .preview-banner {
@@ -223,6 +230,139 @@ button.header-link {
   font: inherit;
   cursor: pointer;
   padding: 0;
+}
+
+body.maestro-menu-open {
+  overflow: hidden;
+}
+
+.action-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.action-sheet-overlay.hidden {
+  display: none;
+}
+
+.action-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(0, 0, 0, var(--action-sheet-backdrop-opacity));
+  cursor: pointer;
+}
+
+.action-sheet {
+  position: relative;
+  width: min(100%, var(--action-sheet-max-width));
+  max-height: min(85vh, calc(100vh - var(--header-height)));
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--color-panel);
+  border-radius: var(--action-sheet-radius) var(--action-sheet-radius) 0 0;
+  padding: 8px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.18);
+}
+
+.action-sheet-handle {
+  width: var(--action-sheet-handle-width);
+  height: var(--action-sheet-handle-height);
+  margin: 4px auto 12px;
+  border-radius: var(--action-sheet-handle-height);
+  background: var(--color-border);
+}
+
+.action-sheet-title {
+  margin: 0 0 8px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.action-sheet-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.action-sheet-list-separated {
+  margin-top: 8px;
+}
+
+.action-sheet-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: 0 16px;
+  border: none;
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  text-decoration: none;
+  color: var(--color-text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.action-sheet-list li:last-child .action-sheet-item {
+  border-bottom: none;
+}
+
+.action-sheet-item:active {
+  background: var(--color-accent-bg);
+}
+
+.action-sheet-item-danger {
+  color: var(--color-danger);
+  justify-content: center;
+  font-weight: 600;
+}
+
+.action-sheet-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--tap-min);
+  margin-top: 4px;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.action-sheet-cancel:active {
+  background: var(--color-accent-bg);
+}
+
+.maestro-settings-dialog {
+  max-width: min(100%, 520px);
+  max-height: min(85vh, calc(100vh - 2rem));
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.maestro-appearance-dialog .theme-css-editor {
+  min-height: 120px;
 }
 
 /* Buttons */
@@ -299,12 +439,19 @@ button.header-link {
 .icon-download,
 .icon-print,
 .icon-close,
+.icon-gear,
 .icon-pdf-scroll-vertical,
 .icon-pdf-scroll-vertical-pages,
 .icon-pdf-scroll-horizontal {
   display: block;
   width: var(--icon-download-size);
   height: var(--icon-download-size);
+}
+
+.site-header-menu-btn .icon-gear {
+  width: var(--icon-gear-size);
+  height: var(--icon-gear-size);
+  color: var(--color-text);
 }
 
 .btn-icon:hover {

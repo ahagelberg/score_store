@@ -17,11 +17,15 @@
     <span class="site-header-site-title">{{ maestro_brand.site_title }}</span>
     {% endif %}
   </div>
-  <nav>
+  <nav class="site-header-nav">
     {% if header_extra_nav %}{{ header_extra_nav }}{% endif %}
-    {% if current_user and not preview_mode %}
-    <span class="user-label">{{ current_user.display_name }}</span>
-    <a class="header-link" href="{{ url_for('logout') }}">Logout</a>
+    {% if current_user and current_user.is_maestro() %}
+    <button type="button" class="btn-icon btn-icon-sm site-header-menu-btn" id="maestro-menu-btn" aria-label="Open menu" aria-haspopup="dialog" aria-controls="maestro-menu-overlay">
+      {% include "partials/icon_gear.svg.html" %}
+    </button>
     {% endif %}
   </nav>
 </header>
+{% if current_user and current_user.is_maestro() and maestro_settings %}
+{% include "partials/maestro_settings_shell.html" %}
+{% endif %}

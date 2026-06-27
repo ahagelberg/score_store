@@ -56,6 +56,33 @@
   let pdfRenderGeneration = 0;
   let pdfRelayoutScheduled = false;
   let context = { scoreIds: [], navQuery: {}, ctx: "" };
+  let featureEnablePrinting = true;
+  let featureEnableDownload = true;
+
+  function libraryFeatureScope(el) {
+    return el?.closest?.(".library-workspace")
+      || document.querySelector(".library-workspace")
+      || scoreViewPage()
+      || document.getElementById("library-root")
+      || document.getElementById("maestro-root")
+      || document.getElementById("admin-root");
+  }
+
+  function syncLibraryFeatures(scope) {
+    const el = libraryFeatureScope(scope);
+    if (!el) return;
+    featureEnablePrinting = el.dataset.enablePrinting !== "false";
+    featureEnableDownload = el.dataset.enableDownload !== "false";
+  }
+
+  function applyViewerFeatureFlags(data) {
+    if (data && "enable_printing" in data) {
+      featureEnablePrinting = data.enable_printing !== false;
+      featureEnableDownload = data.enable_download !== false;
+      return;
+    }
+    syncLibraryFeatures();
+  }
 
   function scoreViewPage() {
     return document.getElementById("score-view-page");
@@ -436,7 +463,7 @@
   function updatePrintButton(pane) {
     if (!printBtn) return;
     const printable = printablePaneTarget(pane);
-    printBtn.classList.toggle("hidden", !printable);
+    printBtn.classList.toggle("hidden", !printable || !featureEnablePrinting);
   }
 
   function printVisiblePane() {
@@ -848,13 +875,14 @@
   }
 
   function renderDownload(downloadUrl) {
-    if (downloadUrl) {
-      downloadEl.href = downloadUrl;
-      downloadEl.classList.remove("hidden");
-    } else {
+    if (!downloadEl) return;
+    if (!featureEnableDownload || !downloadUrl) {
       downloadEl.classList.add("hidden");
       downloadEl.removeAttribute("href");
+      return;
     }
+    downloadEl.href = downloadUrl;
+    downloadEl.classList.remove("hidden");
   }
 
   function fullscreenElement() {
@@ -891,6 +919,7 @@
       return;
     }
     context.scoreIds = data.score_ids || context.scoreIds;
+    applyViewerFeatureFlags(data);
     renderTitle(data.score);
     renderNav(data.nav);
     renderDownload(data.download_url);
@@ -923,6 +952,7 @@
 
   function openFromButton(btn) {
     const workspace = workspaceFrom(btn);
+    syncLibraryFeatures(workspace);
     const scoreId = btn.dataset.scoreId;
     if (!scoreId) return;
     const scoreIds = parseJsonAttr(workspace, "scoreIds", []);

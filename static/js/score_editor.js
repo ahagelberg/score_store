@@ -310,6 +310,30 @@
     return libraryCtx;
   }
 
+  function libraryFeaturesFromScope(el) {
+    const scope = el?.closest?.(".library-workspace")
+      || document.querySelector(".library-workspace")
+      || document.getElementById("library-root")
+      || document.getElementById("maestro-root")
+      || document.getElementById("admin-root");
+    return {
+      enablePrinting: scope?.dataset.enablePrinting !== "false",
+      enableDownload: scope?.dataset.enableDownload !== "false",
+    };
+  }
+
+  function scoreSummaryActionButtons(score, mainFile, libraryCtx, features) {
+    if (!mainFile) return "";
+    const viewBtn = `<a class="btn-icon btn-icon-sm score-view-btn" href="/scores/${score.id}/view?lib=${encodeURIComponent(libraryCtx)}" data-score-id="${escapeHtml(score.id)}" title="View" aria-label="View">👁</a>`;
+    const downloadBtn = features.enableDownload
+      ? `<a class="btn-icon btn-icon-sm viewer-header-btn score-download-btn" href="${scoreApiPath(score.id, "download")}" title="Download" aria-label="Download">${ICON_DOWNLOAD}</a>`
+      : "";
+    const printBtn = features.enablePrinting
+      ? `<button type="button" class="btn-icon btn-icon-sm score-print-btn" data-print-url="${previewPdfUrl(score.id, mainFile)}" data-print-media="pdf" title="Print" aria-label="Print">${ICON_PRINT}</button>`
+      : "";
+    return `${viewBtn}${downloadBtn}${printBtn}`;
+  }
+
   function buildAuxFileHtml(file) {
     return `<li class="aux-file-item" draggable="true" data-file-id="${escapeHtml(file.id)}" data-drag-kind="aux">
       <span class="aux-file-icon" aria-hidden="true">📄</span>
@@ -339,11 +363,8 @@
       : "";
     const noMainBadge = mainFile ? "" : `<span class="score-badge-warn">No main PDF</span>`;
     const tagChips = (score.tags || []).map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("");
-    const summaryActionsHtml = mainFile
-      ? `<a class="btn-icon btn-icon-sm score-view-btn" href="/scores/${score.id}/view?lib=${encodeURIComponent(libraryCtx)}" data-score-id="${escapeHtml(score.id)}" title="View" aria-label="View">👁</a>
-         <a class="btn-icon btn-icon-sm viewer-header-btn score-download-btn" href="${scoreApiPath(score.id, "download")}" title="Download" aria-label="Download">${ICON_DOWNLOAD}</a>
-         <button type="button" class="btn-icon btn-icon-sm score-print-btn" data-print-url="${previewPdfUrl(score.id, mainFile)}" data-print-media="pdf" title="Print" aria-label="Print">${ICON_PRINT}</button>`
-      : "";
+    const features = libraryFeaturesFromScope(opts.listEl);
+    const summaryActionsHtml = scoreSummaryActionButtons(score, mainFile, libraryCtx, features);
     const li = document.createElement("li");
     li.className = `score-accordion drop-target${expanded ? " score-accordion-expanded score-accordion-edit" : " score-accordion-collapsed"}`;
     li.dataset.dropKind = "score";
@@ -470,6 +491,7 @@
       draggable,
       hardDelete,
       canEditYear: canEditYearFromList(list),
+      listEl: list,
     });
     if (accordionMode) setAccordionMode(newItem, accordionMode);
     parent.replaceChild(newItem, item);
@@ -490,6 +512,7 @@
       draggable,
       hardDelete: opts.hardDelete,
       canEditYear: opts.canEditYear ?? canEditYearFromList(list),
+      listEl: list,
     });
     list.insertBefore(item, list.firstChild);
     bindAccordion(item);

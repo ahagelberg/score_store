@@ -313,6 +313,10 @@ def maestro_header_show_title(cfg: dict, has_logotype: bool) -> bool:
     return MaestroConfig.from_dict(cfg).header_show_title(has_logotype)
 
 
+def maestro_library_features(cfg: dict) -> dict[str, bool]:
+    return MaestroConfig.from_dict(cfg).library_features()
+
+
 def scores_for_library_sorted(library_id: str, query: str, tag: str | None) -> list[Score]:
     return [
         Score.from_dict(entry)

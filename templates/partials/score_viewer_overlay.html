@@ -22,12 +22,16 @@
         <span class="viewer-icon-pdf-scroll-vertical-pages hidden">{% include "partials/icon_pdf_scroll_vertical_pages.svg.html" %}</span>
         <span class="viewer-icon-pdf-scroll-horizontal hidden">{% include "partials/icon_pdf_scroll_horizontal.svg.html" %}</span>
       </button>
+      {% if maestro_library_features.enable_download %}
       <a class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-download" title="Download" aria-label="Download">
         {% include "partials/icon_download.svg.html" %}
       </a>
+      {% endif %}
+      {% if maestro_library_features.enable_printing %}
       <button type="button" class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-print" title="Print" aria-label="Print">
         {% include "partials/icon_print.svg.html" %}
       </button>
+      {% endif %}
       <button type="button" class="btn-icon btn-icon-sm viewer-header-btn hidden" id="score-viewer-notes-toggle" aria-label="Notes" title="Notes">
         <svg class="viewer-icon-notes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 20h9"/>

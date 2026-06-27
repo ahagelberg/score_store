@@ -4,7 +4,9 @@
 <div class="library-page" id="library-root"
      data-library-ctx="{{ library_panel.library_ctx }}"
      data-is-choir="{{ 'true' if is_choir else 'false' }}"
-     data-can-edit="{{ 'true' if library_panel.can_upload else 'false' }}">
+     data-can-edit="{{ 'true' if library_panel.can_upload else 'false' }}"
+     data-enable-printing="{{ 'true' if maestro_library_features.enable_printing else 'false' }}"
+     data-enable-download="{{ 'true' if maestro_library_features.enable_download else 'false' }}">
   {% include "partials/library_panel.html" %}
 </div>
 {% include "partials/score_viewer_overlay.html" %}

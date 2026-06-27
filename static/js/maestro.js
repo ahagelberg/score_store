@@ -111,19 +111,6 @@
     handoutUserId = "";
   }
 
-  function openPasswordDialog() {
-    const overlay = document.getElementById("maestro-password-overlay");
-    const form = document.getElementById("maestro-password-form");
-    if (!overlay || !form) return;
-    form.reset();
-    overlay.classList.remove("hidden");
-  }
-
-  function closePasswordDialog() {
-    const overlay = document.getElementById("maestro-password-overlay");
-    if (overlay) overlay.classList.add("hidden");
-  }
-
   async function openHandoutDialog(userId) {
     const overlay = document.getElementById("user-handout-overlay");
     const content = document.getElementById("user-handout-content");
@@ -290,21 +277,6 @@
     document.querySelectorAll("[data-handout-close]").forEach((el) => {
       el.addEventListener("click", closeHandoutDialog);
     });
-
-    document.querySelectorAll("#maestro-password-btn").forEach((btn) => {
-      btn.addEventListener("click", openPasswordDialog);
-    });
-
-    document.querySelectorAll("[data-maestro-password-close]").forEach((el) => {
-      el.addEventListener("click", closePasswordDialog);
-    });
-
-    const passwordOverlay = document.getElementById("maestro-password-overlay");
-    if (passwordOverlay) {
-      passwordOverlay.addEventListener("click", (e) => {
-        if (e.target === passwordOverlay) closePasswordDialog();
-      });
-    }
 
     const handoutOverlay = document.getElementById("user-handout-overlay");
     if (handoutOverlay) {

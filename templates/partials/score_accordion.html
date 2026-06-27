@@ -36,15 +36,19 @@
            data-score-id="{{ score.id }}"
            title="View"
            aria-label="View">👁</a>
+        {% if maestro_library_features.enable_download %}
         <a class="btn-icon btn-icon-sm viewer-header-btn score-download-btn"
            href="{{ score_download_url(score.id) }}"
            title="Download"
            aria-label="Download">{% include "partials/icon_download.svg.html" %}</a>
+        {% endif %}
+        {% if maestro_library_features.enable_printing %}
         <button type="button" class="btn-icon btn-icon-sm score-print-btn"
                 data-print-url="{{ serve_file_url(score.id, score_main.stored_name) }}"
                 data-print-media="pdf"
                 title="Print"
                 aria-label="Print">{% include "partials/icon_print.svg.html" %}</button>
+        {% endif %}
         {% endif %}
         {% if can_edit|default(false) %}
         <button type="button" class="btn-icon btn-icon-sm score-edit-btn" data-action="expand" title="Edit" aria-label="Edit">✎</button>

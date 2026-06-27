@@ -4,7 +4,9 @@
 <button type="button" class="header-link" id="admin-password-btn">Password</button>
 {% endset %}
 {% include "partials/site_header.html" %}
-<div class="admin-layout" id="admin-root">
+<div class="admin-layout" id="admin-root"
+     data-enable-printing="{{ 'true' if maestro_library_features.enable_printing else 'false' }}"
+     data-enable-download="{{ 'true' if maestro_library_features.enable_download else 'false' }}">
   <div class="admin-col admin-col-tree">
     {% with panel_title="Maestros", user_tree=user_tree, tree_ctx=tree_ctx, query=query, active_tag=active_tag %}
       {% include "partials/user_tree_panel.html" %}

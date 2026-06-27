@@ -4,7 +4,9 @@
      data-view-nav='{{ library_panel.view_nav|tojson }}'
      data-folders='{{ library_panel.folders|tojson }}'
      data-can-edit-year="{{ 'true' if user_can_edit_score_year(current_user) else 'false' }}"
-     data-summary-opens-viewer="{{ 'true' if library_panel.summary_opens_viewer else 'false' }}">
+     data-summary-opens-viewer="{{ 'true' if library_panel.summary_opens_viewer else 'false' }}"
+     data-enable-printing="{{ 'true' if maestro_library_features.enable_printing else 'false' }}"
+     data-enable-download="{{ 'true' if maestro_library_features.enable_download else 'false' }}">
   <div class="workspace-toolbar">
     {% include "partials/filter_bar.html" %}
     {% if library_panel.all_tags %}

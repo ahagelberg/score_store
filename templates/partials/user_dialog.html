@@ -1,11 +1,8 @@
 <div class="dialog-overlay hidden" id="user-dialog-overlay" data-dialog="user">
   <div class="dialog" role="dialog" aria-labelledby="user-dialog-title">
     <h2 id="user-dialog-title">Add user</h2>
-    <form id="user-dialog-form" method="post"{% if preview_mode and request.args.get('preview') %} data-preview-token="{{ request.args.get('preview') }}"{% endif %}>
+    <form id="user-dialog-form" method="post">
       {% include "partials/csrf_field.html" %}
-      {% if preview_mode and request.args.get('preview') %}
-      <input type="hidden" name="preview" value="{{ request.args.get('preview') }}">
-      {% endif %}
       <input type="hidden" name="user_id" id="user-dialog-user-id" value="">
       <div class="form-group">
         <label for="user-display-name">Display name</label>
