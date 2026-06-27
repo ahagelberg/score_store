@@ -178,6 +178,7 @@ a:hover {
   gap: 12px;
   align-items: center;
   font-size: 12px;
+  margin-left:24px;
 }
 
 .preview-banner {
@@ -645,7 +646,7 @@ textarea.form-control {
 }
 
 .folder-tree-item {
-  margin: 0 4px;
+  margin: 0 8px;
   border-radius: var(--radius);
 }
 
