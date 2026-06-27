@@ -9,12 +9,12 @@
     {% if maestro_brand and maestro_brand.logotype_url %}
     <img class="site-logotype" src="{{ maestro_brand.logotype_url }}" alt="">
     {% endif %}
-    {% if maestro_brand %}
-      {% if maestro_brand.show_site_title and maestro_brand.site_title %}
-      <h1 class="site-header-title">{{ maestro_brand.site_title }}</h1>
-      {% endif %}
-    {% else %}
-    <h1 class="site-header-title">{{ app_title }}</h1>
+    <div class="site-header-product">
+      <span class="site-header-product-name">{{ app_title }}</span>
+      <span class="site-header-product-version" id="site-header-version" hidden></span>
+    </div>
+    {% if maestro_brand and maestro_brand.show_site_title and maestro_brand.site_title %}
+    <span class="site-header-site-title">{{ maestro_brand.site_title }}</span>
     {% endif %}
   </div>
   <nav>

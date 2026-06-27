@@ -138,6 +138,4 @@
     PRINT_MEDIA_PDF,
     PRINT_MEDIA_IMAGE,
   };
-
-  document.addEventListener("DOMContentLoaded", () => bindPrintButtons(document));
 })();

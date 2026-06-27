@@ -1,3 +1,48 @@
+{% macro user_tree_user_row(node) %}
+<li class="user-tree-child{% if node.active %} active{% endif %}{% if node.role == 'choir' %} user-tree-choir{% elif node.role == 'singer' %} user-tree-singer{% endif %}{% if tree_ctx.drop_target_users %} drop-target{% endif %}"
+    {% if tree_ctx.drop_target_users %}data-drop-kind="user" data-user-id="{{ node.id }}"{% endif %}>
+  <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, node, query, active_tag) }}">
+    {{ node.display_name }}
+    {% if node.role %}<span class="user-tree-role">{{ node.role }}</span>{% endif %}
+  </a>
+  {% if tree_ctx.show_user_edit %}
+  <button type="button" class="btn-icon btn-icon-sm user-handout-tree-btn"
+          data-user-id="{{ node.id }}"
+          title="Login card" aria-label="Login card">⎙</button>
+  <button type="button" class="btn-icon btn-icon-sm user-edit-btn"
+          data-user-id="{{ node.id }}"
+          data-display-name="{{ node.display_name }}"
+          data-username="{{ node.username }}"
+          data-role="{{ node.role }}"
+          data-password="{{ node.password|default('', true)|e }}"
+          title="Edit" aria-label="Edit">✎</button>
+  {% endif %}
+  {% if tree_ctx.show_user_preview %}
+  <a class="btn-icon btn-icon-sm user-preview-btn"
+     href="{{ admin_preview_user_url(node.id) }}"
+     target="_blank" rel="noopener"
+     title="Preview as this user" aria-label="Preview as this user">👁</a>
+  {% endif %}
+</li>
+{% endmacro %}
+
+{% macro user_tree_section_title(label) %}
+<li class="user-tree-section-title" aria-hidden="true">{{ label }}</li>
+{% endmacro %}
+
+{% macro user_tree_grouped_users(nodes) %}
+{% set choir_nodes = nodes | selectattr('role', 'equalto', 'choir') | list %}
+{% set user_nodes = nodes | selectattr('role', 'equalto', 'singer') | list %}
+{% if choir_nodes %}
+{{ user_tree_section_title(tree_ctx.choirs_section_title) }}
+{% for node in choir_nodes %}{{ user_tree_user_row(node) }}{% endfor %}
+{% endif %}
+{% if user_nodes %}
+{{ user_tree_section_title(tree_ctx.users_section_title) }}
+{% for node in user_nodes %}{{ user_tree_user_row(node) }}{% endfor %}
+{% endif %}
+{% endmacro %}
+
 <div class="desktop-panel user-tree-panel">
   <div class="desktop-panel-header">
     <span>{{ panel_title }}</span>
@@ -9,6 +54,7 @@
   </div>
   <div class="desktop-panel-content">
     <ul class="user-tree">
+      {% if tree_ctx.show_maestro_nodes %}
       {% for node in user_tree %}
       {% if node.kind == "maestro" %}
       <li class="user-tree-maestro">
@@ -40,58 +86,23 @@
         </div>
         {% if node.children %}
         <ul class="user-tree-children">
-          {% for child in node.children %}
+          {% for child in node.children if child.kind != 'user' %}
           <li class="user-tree-child{% if child.active %} active{% endif %}{% if tree_ctx.drop_target_users and child.kind == 'user' %} drop-target{% endif %}"
               {% if tree_ctx.drop_target_users and child.kind == 'user' %}data-drop-kind="user" data-user-id="{{ child.id }}"{% endif %}>
             <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, child, query, active_tag) }}">
               {{ child.display_name }}
-              {% if child.role %}<span class="user-tree-role">{{ child.role }}</span>{% endif %}
             </a>
-            {% if tree_ctx.show_user_edit and child.kind == "user" %}
-            <button type="button" class="btn-icon btn-icon-sm user-handout-tree-btn"
-                    data-user-id="{{ child.id }}"
-                    title="Login card" aria-label="Login card">⎙</button>
-            <button type="button" class="btn-icon btn-icon-sm user-edit-btn"
-                    data-user-id="{{ child.id }}"
-                    data-display-name="{{ child.display_name }}"
-                    data-username="{{ child.username }}"
-                    data-role="{{ child.role }}"
-                    data-password="{{ child.password|default('', true)|e }}"
-                    title="Edit" aria-label="Edit">✎</button>
-            {% endif %}
-            {% if tree_ctx.show_user_preview and child.kind == "user" %}
-            <a class="btn-icon btn-icon-sm user-preview-btn"
-               href="{{ admin_preview_user_url(child.id) }}"
-               target="_blank" rel="noopener"
-               title="Preview as this user" aria-label="Preview as this user">👁</a>
-            {% endif %}
           </li>
           {% endfor %}
+          {{ user_tree_grouped_users(node.children) }}
         </ul>
-        {% endif %}
-      </li>
-      {% else %}
-      <li class="user-tree-child{% if node.active %} active{% endif %}{% if tree_ctx.drop_target_users %} drop-target{% endif %}"
-          {% if tree_ctx.drop_target_users %}data-drop-kind="user" data-user-id="{{ node.id }}"{% endif %}>
-        <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, node, query, active_tag) }}">
-          {{ node.display_name }}
-          <span class="user-tree-role">{{ node.role }}</span>
-        </a>
-        {% if tree_ctx.show_user_edit %}
-        <button type="button" class="btn-icon btn-icon-sm user-handout-tree-btn"
-                data-user-id="{{ node.id }}"
-                title="Login card" aria-label="Login card">⎙</button>
-        <button type="button" class="btn-icon btn-icon-sm user-edit-btn"
-                data-user-id="{{ node.id }}"
-                data-display-name="{{ node.display_name }}"
-                data-username="{{ node.username }}"
-                data-role="{{ node.role }}"
-                data-password="{{ node.password|default('', true)|e }}"
-                title="Edit" aria-label="Edit">✎</button>
         {% endif %}
       </li>
       {% endif %}
       {% endfor %}
+      {% else %}
+      {{ user_tree_grouped_users(user_tree) }}
+      {% endif %}
     </ul>
   </div>
 </div>

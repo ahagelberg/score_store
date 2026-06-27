@@ -91,5 +91,4 @@
   }
 
   window.TagInput = { initAll, initField, addChip, setFieldTags, syncFieldFromHidden, syncHidden, parseTags };
-  document.addEventListener("DOMContentLoaded", () => initAll(document));
 })();

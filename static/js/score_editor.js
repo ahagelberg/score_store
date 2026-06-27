@@ -476,6 +476,7 @@
     bindAccordion(newItem);
     if (window.TagInput) window.TagInput.initAll(newItem);
     window.LibraryDrop?.bindDropTargets?.(newItem);
+    window.LibraryDrop?.bindTouchScoreDrag?.(newItem);
     window.ScoreEditorPreview?.reconcile?.(newItem);
     return newItem;
   }
@@ -494,6 +495,7 @@
     bindAccordion(item);
     if (window.TagInput) window.TagInput.initAll(item);
     window.LibraryDrop?.bindDropTargets?.(item);
+    window.LibraryDrop?.bindTouchScoreDrag?.(item);
     if (expanded) {
       if (opts.expandMode === "keep") expandEditAccordionKeepOthers(item);
       else expandEditAccordion(item);
@@ -757,6 +759,8 @@
     if (!item.dataset.dragScore) return;
     const summaryEl = item.querySelector("[data-score-summary]");
     if (!summaryEl) return;
+    window.LibraryDrop?.bindTouchScoreDrag?.(item);
+    if (window.LibraryDrop?.isCoarsePointerDevice?.()) return;
     summaryEl.draggable = true;
     summaryEl.addEventListener("dragstart", (e) => {
       if (e.target.closest(SCORE_DRAG_BLOCK_SELECTOR)) {
@@ -791,6 +795,7 @@
       syncAuxIndicator(item);
       summaryEl.addEventListener("click", (e) => {
         if (e.target.closest(".score-summary-actions, button, a")) return;
+        if (window.LibraryDrop?.scoreSummaryClickSuppressed?.(item)) return;
         openSummaryAction(item);
       });
     }
@@ -858,6 +863,8 @@
   }
 
   function bindEscapeToCloseEdit() {
+    if (document.body.dataset.scoreEditorEscapeBound === "true") return;
+    document.body.dataset.scoreEditorEscapeBound = "true";
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       const overlay = document.getElementById("score-viewer-overlay");
@@ -869,15 +876,18 @@
     });
   }
 
-  function initExisting() {
+  function initExisting(root) {
     bindEscapeToCloseEdit();
-    document.querySelectorAll(".score-accordion").forEach((item) => {
+    const scope = root || document;
+    scope.querySelectorAll(".score-accordion").forEach((item) => {
+      if (item.dataset.editorBound === "true") return;
+      item.dataset.editorBound = "true";
       bindAccordion(item);
       if (item.classList.contains("score-accordion-expanded")) {
         window.ScoreEditorPreview?.reconcile?.(item);
       }
     });
-    if (window.TagInput) window.TagInput.initAll(document);
+    if (window.TagInput) window.TagInput.initAll(scope);
   }
 
   window.ScoreEditor = {
@@ -898,6 +908,4 @@
     scoreApiPath,
     DRAG_MIME,
   };
-
-  document.addEventListener("DOMContentLoaded", initExisting);
 })();

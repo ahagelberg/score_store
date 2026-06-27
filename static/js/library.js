@@ -4,6 +4,29 @@
   const DRAG_MIME = "application/x-score-file";
   const SCORE_DRAG_MIME = "application/x-score-id";
   const USER_LIBRARY_CTX_PREFIX = "user-";
+  const POINTER_DRAG_THRESHOLD_PX = 10;
+  const TOUCH_DRAG_GHOST_CLASS = "score-touch-drag-ghost";
+  const TOUCH_DRAG_SUPPRESS_CLICK_MS = 400;
+  const COARSE_POINTER_MEDIA = "(pointer: coarse)";
+
+  let touchDragGhost = null;
+  let activeTouchDrag = null;
+  let touchDragDocumentBound = false;
+
+  function isCoarsePointerDevice() {
+    return window.matchMedia(COARSE_POINTER_MEDIA).matches;
+  }
+
+  function suppressScoreSummaryClick(item) {
+    item.dataset.touchDragSuppressClick = "true";
+    window.setTimeout(() => {
+      delete item.dataset.touchDragSuppressClick;
+    }, TOUCH_DRAG_SUPPRESS_CLICK_MS);
+  }
+
+  function scoreSummaryClickSuppressed(item) {
+    return item?.dataset?.touchDragSuppressClick === "true";
+  }
 
   function dropTargetFrom(el) {
     return el.closest("[data-drop-kind]");
@@ -349,6 +372,143 @@
       });
   }
 
+  function ensureTouchDragGhost() {
+    if (touchDragGhost) return touchDragGhost;
+    touchDragGhost = document.createElement("div");
+    touchDragGhost.className = `${TOUCH_DRAG_GHOST_CLASS} hidden`;
+    touchDragGhost.setAttribute("aria-hidden", "true");
+    document.body.appendChild(touchDragGhost);
+    return touchDragGhost;
+  }
+
+  function touchDragTitle(item) {
+    return item.querySelector(".score-summary-title")?.textContent?.trim() || "Score";
+  }
+
+  function showTouchDragGhost(item, x, y) {
+    const ghost = ensureTouchDragGhost();
+    ghost.textContent = touchDragTitle(item);
+    ghost.classList.remove("hidden");
+    ghost.style.left = `${x}px`;
+    ghost.style.top = `${y}px`;
+  }
+
+  function moveTouchDragGhost(x, y) {
+    if (!touchDragGhost) return;
+    touchDragGhost.style.left = `${x}px`;
+    touchDragGhost.style.top = `${y}px`;
+  }
+
+  function hideTouchDragGhost() {
+    if (!touchDragGhost) return;
+    touchDragGhost.classList.add("hidden");
+  }
+
+  function dropTargetAt(x, y) {
+    const ghostWasVisible = touchDragGhost && !touchDragGhost.classList.contains("hidden");
+    const dragItem = activeTouchDrag?.item;
+    if (ghostWasVisible) hideTouchDragGhost();
+    const hit = document.elementFromPoint(x, y);
+    if (ghostWasVisible && dragItem) showTouchDragGhost(dragItem, x, y);
+    return hit ? dropTargetFrom(hit) : null;
+  }
+
+  function syntheticScoreTransfer(scoreId) {
+    return {
+      types: [SCORE_DRAG_MIME],
+      getData(type) {
+        return type === SCORE_DRAG_MIME ? scoreId : "";
+      },
+    };
+  }
+
+  function clearTouchDragDocumentListeners() {
+    if (!touchDragDocumentBound) return;
+    document.removeEventListener("pointermove", onTouchDragPointerMove);
+    document.removeEventListener("pointerup", onTouchDragPointerUp);
+    document.removeEventListener("pointercancel", onTouchDragPointerUp);
+    touchDragDocumentBound = false;
+  }
+
+  function bindTouchDragDocumentListeners() {
+    if (touchDragDocumentBound) return;
+    document.addEventListener("pointermove", onTouchDragPointerMove, { passive: false });
+    document.addEventListener("pointerup", onTouchDragPointerUp);
+    document.addEventListener("pointercancel", onTouchDragPointerUp);
+    touchDragDocumentBound = true;
+  }
+
+  function onTouchDragPointerMove(e) {
+    const drag = activeTouchDrag;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    if (!drag.dragging) {
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (Math.hypot(dx, dy) < POINTER_DRAG_THRESHOLD_PX) return;
+      drag.dragging = true;
+      drag.item.classList.add("score-dragging");
+      showTouchDragGhost(drag.item, e.clientX, e.clientY);
+    }
+    moveTouchDragGhost(e.clientX, e.clientY);
+    clearDropActive(dropScope(drag.item));
+    const target = dropTargetAt(e.clientX, e.clientY);
+    if (target) setDropActive(target, true);
+    e.preventDefault();
+  }
+
+  function onTouchDragPointerUp(e) {
+    const drag = activeTouchDrag;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    clearTouchDragDocumentListeners();
+    finishTouchDrag(e.clientX, e.clientY);
+  }
+
+  function finishTouchDrag(clientX, clientY) {
+    const drag = activeTouchDrag;
+    if (!drag) return;
+    activeTouchDrag = null;
+    hideTouchDragGhost();
+    drag.item.classList.remove("score-dragging");
+    clearDropActive(document);
+    const summary = drag.item.querySelector("[data-score-summary]");
+    if (summary && !isCoarsePointerDevice()) summary.setAttribute("draggable", "true");
+    if (!drag.dragging) return;
+    suppressScoreSummaryClick(drag.item);
+    const target = dropTargetAt(clientX, clientY);
+    if (!target) return;
+    handleFileDrop(target, [], null, syntheticScoreTransfer(drag.scoreId));
+  }
+
+  function bindTouchScoreDrag(item) {
+    if (item.dataset.touchDragBound === "true") return;
+    if (item.dataset.dragScore !== "true" || !item.dataset.scoreId) return;
+    const summary = item.querySelector("[data-score-summary]");
+    if (!summary) return;
+    item.dataset.touchDragBound = "true";
+    if (isCoarsePointerDevice()) summary.removeAttribute("draggable");
+
+    summary.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse") return;
+      if (e.button !== 0) return;
+      if (e.target.closest(".score-summary-actions, button, a")) return;
+      if (activeTouchDrag) return;
+      summary.removeAttribute("draggable");
+      activeTouchDrag = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        dragging: false,
+        scoreId: item.dataset.scoreId,
+        item,
+      };
+      bindTouchDragDocumentListeners();
+    }, { passive: true });
+  }
+
+  function bindTouchScoreDrags(root) {
+    (root || document).querySelectorAll('.score-accordion[data-drag-score="true"]').forEach(bindTouchScoreDrag);
+  }
+
   function bindDropTargets(root) {
     root.querySelectorAll(".drop-target").forEach(bindDropTarget);
   }
@@ -433,13 +593,58 @@
     });
   }
 
-  window.LibraryDrop = { bindDropTargets, bindDropTarget };
+  window.LibraryDrop = {
+    bindDropTargets,
+    bindDropTarget,
+    bindTouchScoreDrag,
+    bindTouchScoreDrags,
+    scoreSummaryClickSuppressed,
+    isCoarsePointerDevice,
+  };
 
-  document.addEventListener("DOMContentLoaded", () => {
-    const root = pageRoot();
+  function initRoot(root) {
     if (!root) return;
     bindDropTargets(root);
+    bindTouchScoreDrags(root);
     bindUploadButtons(root);
+  }
+
+  window.LibraryPage = { initRoot };
+
+  function bootstrapLibraryRoot(root) {
+    if (!root) return;
+    window.LibraryLayout?.initWorkspaces?.(root);
+    window.ScoreFilter?.initAll?.(root);
+    window.ScoreEditor?.initExisting?.(root);
+    initRoot(root);
+    window.ScorePrint?.bindPrintButtons?.(root);
+    window.TagInput?.initAll?.(root);
+    root.querySelectorAll(".library-workspace").forEach((workspace) => {
+      window.LibraryLayout?.refreshWorkspace?.(workspace);
+    });
+    window.ScoreFilter?.reapplyAll?.();
+    window.ScoreEditorPreview?.reconcile?.();
+  }
+
+  function bootstrapPage() {
+    const root = pageRoot();
+    if (!root) return;
+    window.LibraryLayout?.stripLayoutParams?.();
+    if (root.dataset.isChoir === "true") {
+      window.LibraryLayout?.initChoirReset?.(root);
+    }
     bindFolderActions(root);
-  });
+    bootstrapLibraryRoot(root);
+  }
+
+  function onReady(fn) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", fn);
+    } else {
+      fn();
+    }
+  }
+
+  onReady(bootstrapPage);
+  window.LibraryBootstrap = { bootstrapLibraryRoot, bootstrapPage, pageRoot };
 })();

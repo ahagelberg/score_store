@@ -1,0 +1,15 @@
+/* Admin console theme — separate from maestro-scoped themes */
+:root {
+  --color-bg: #eef0f4;
+  --color-surface: #ffffff;
+  --color-panel: #f4f5f8;
+  --color-toolbar: #e8eaef;
+  --color-border: #c4c9d4;
+  --color-border-light: #d5dae3;
+  --color-text: #1c1f26;
+  --color-muted: #5c6370;
+  --color-primary: #4a5568;
+  --color-primary-hover: #3d4654;
+  --color-accent-bg: #e2e6ed;
+  --color-selection: #cfd6e3;
+}

@@ -5,6 +5,8 @@ from pathlib import Path
 
 from fpdf import FPDF
 
+from models.user import User
+
 APP_ROOT = Path(__file__).resolve().parent
 FONT_CANDIDATES = (
     APP_ROOT / "static" / "fonts" / "DejaVuSans.ttf",
@@ -37,13 +39,13 @@ def user_role_label(role: str) -> str:
     return USER_ROLE_LABELS.get(role, role)
 
 
-def handout_context(user: dict, site_url: str, app_title: str, password_plain: str) -> dict:
+def handout_context(user: User, site_url: str, app_title: str, password_plain: str) -> dict:
     login_url = f"{site_url.rstrip('/')}/login"
     return {
         "app_title": app_title,
-        "display_name": user.get("display_name", ""),
-        "username": user.get("username", ""),
-        "role_label": user_role_label(user.get("role", "")),
+        "display_name": user.display_name,
+        "username": user.username,
+        "role_label": user_role_label(user.role),
         "password": password_plain,
         "password_available": bool(password_plain),
         "site_url": site_url,

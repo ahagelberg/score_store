@@ -1,0 +1,19 @@
+{% if library_panel %}
+<div class="library-slot">
+  {% if maestro_stats %}
+  <div class="maestro-stats-bar">
+    <span>{{ maestro_stats.score_count }} scores</span>
+    <span>{{ maestro_stats.sub_account_count }} accounts</span>
+    <span>{{ maestro_stats.disk_label }} used</span>
+  </div>
+  {% endif %}
+  {% with library_panel=library_panel %}
+    {% include "partials/library_panel.html" %}
+  {% endwith %}
+</div>
+{% else %}
+<div class="desktop-panel library-slot-empty">
+  <div class="desktop-panel-header"><span>Library</span></div>
+  <div class="desktop-panel-empty">Select a maestro account to browse libraries.</div>
+</div>
+{% endif %}

@@ -1,152 +1,125 @@
 """Authorization policy for the score portal."""
 
+from __future__ import annotations
+
 import store
-
-SINGER_ROLE = "singer"
-CHOIR_ROLE = "choir"
-
-
-def user_role(user: dict) -> str:
-    return user.get("role", "")
+from models.score import Score
+from models.user import User
 
 
-def is_admin(user: dict) -> bool:
-    return user_role(user) == store.ADMIN_ROLE
-
-
-def is_maestro(user: dict) -> bool:
-    return user_role(user) == store.MAESTRO_ROLE
-
-
-def is_singer(user: dict) -> bool:
-    return user_role(user) == SINGER_ROLE
-
-
-def is_choir(user: dict) -> bool:
-    return user_role(user) == CHOIR_ROLE
-
-
-def user_can_edit_maestro_config(user: dict, maestro_username: str) -> bool:
-    if is_admin(user):
+def user_can_edit_maestro_config(user: User, maestro_username: str) -> bool:
+    if user.is_admin():
         return True
-    if is_maestro(user):
-        return user.get("username", "").lower() == maestro_username.strip().lower()
+    if user.is_maestro():
+        return user.username == maestro_username.strip().lower()
     return False
 
 
-def user_can_upload_to_library(user: dict, library_id: str) -> bool:
-    if is_admin(user):
+def user_can_upload_to_library(user: User, library_id: str) -> bool:
+    if user.is_admin():
         return False
-    if is_singer(user):
-        return library_id == user["id"]
-    if is_maestro(user):
+    if user.is_singer():
+        return library_id == user.id
+    if user.is_maestro():
         return library_id == store.GLOBAL_LIBRARY_ID
     return False
 
 
-def user_can_manage_folders_in_library(user: dict, library_id: str) -> bool:
-    if is_admin(user):
+def user_can_manage_folders_in_library(user: User, library_id: str) -> bool:
+    if user.is_admin():
         return False
-    if is_maestro(user):
+    if user.is_maestro():
         return True
-    return is_singer(user) and library_id == user["id"]
+    return user.is_singer() and library_id == user.id
 
 
-def library_panel_capabilities(user: dict, library_id: str) -> dict:
+def library_panel_capabilities(user: User, library_id: str) -> dict:
     return {
         "can_upload": user_can_upload_to_library(user, library_id),
         "can_manage_folders": user_can_manage_folders_in_library(user, library_id),
-        "is_choir": is_choir(user),
-        "read_only": is_admin(user),
+        "is_choir": user.is_choir(),
+        "read_only": user.is_admin(),
     }
 
 
-def user_can_edit_score(user: dict, meta: dict) -> bool:
-    if is_admin(user):
+def user_can_edit_score(user: User, score: Score) -> bool:
+    if user.is_admin():
         return False
-    if is_maestro(user):
+    if user.is_maestro():
         return True
-    return meta.get("owner_id") == user["id"]
+    return score.owner_id == user.id
 
 
-def user_can_edit_score_year(user: dict) -> bool:
-    return is_maestro(user)
+def user_can_edit_score_year(user: User) -> bool:
+    return user.is_maestro()
 
 
-def user_can_view_score(user: dict, meta: dict, library_id: str) -> bool:
-    if is_admin(user):
+def user_can_view_score(user: User, score: Score, library_id: str) -> bool:
+    if user.is_admin():
         return store.current_maestro_data() is not None
-    if is_maestro(user):
+    if user.is_maestro():
         return True
-    if meta.get("owner_id") == user["id"]:
+    if score.owner_id == user.id:
         return True
-    sid = meta.get("id")
-    if not sid:
+    if not score.id:
         return False
-    return store.library_has_score(library_id, sid)
+    return store.library_has_score(library_id, score.id)
 
 
-def user_can_set_score_folder(user: dict, meta: dict, library_id: str) -> bool:
-    if is_admin(user):
+def user_can_set_score_folder(user: User, score: Score, library_id: str) -> bool:
+    if user.is_admin():
         return False
-    score_id = meta.get("id")
-    if not score_id or not store.library_has_score(library_id, score_id):
+    if not score.id or not store.library_has_score(library_id, score.id):
         return False
     return user_can_manage_folders_in_library(user, library_id)
 
 
-def user_can_hard_delete_score(user: dict, meta: dict, library_id: str | None = None) -> bool:
-    if is_admin(user):
+def user_can_hard_delete_score(user: User, score: Score, library_id: str | None = None) -> bool:
+    if user.is_admin():
         return False
-    if is_maestro(user):
+    if user.is_maestro():
         lib_id = library_id or store.GLOBAL_LIBRARY_ID
         return lib_id == store.GLOBAL_LIBRARY_ID
-    score_id = meta.get("id")
-    owner_id = meta.get("owner_id")
-    if not score_id or owner_id != user["id"] or owner_id == store.SYSTEM_OWNER_ID:
+    if not score.id or score.owner_id != user.id or score.owner_id == store.SYSTEM_OWNER_ID:
         return False
-    if store.library_has_score(store.GLOBAL_LIBRARY_ID, score_id):
+    if store.library_has_score(store.GLOBAL_LIBRARY_ID, score.id):
         return False
-    if not store.library_has_score(user["id"], score_id):
+    if not store.library_has_score(user.id, score.id):
         return False
-    return not store.score_shared_beyond_owner(score_id, owner_id)
+    return not store.score_shared_beyond_owner(score.id, score.owner_id)
 
 
-def user_can_remove_score(user: dict, meta: dict, library_id: str | None = None) -> bool:
-    if is_admin(user):
+def user_can_remove_score(user: User, score: Score, library_id: str | None = None) -> bool:
+    if user.is_admin():
         return False
-    if is_maestro(user):
+    if user.is_maestro():
         return True
-    lib_id = library_id or user["id"]
-    if user_can_hard_delete_score(user, meta, lib_id):
+    lib_id = library_id or user.id
+    if user_can_hard_delete_score(user, score, lib_id):
         return True
-    score_id = meta.get("id")
-    if not score_id:
+    if not score.id:
         return False
-    return store.library_has_score(lib_id, score_id)
+    return store.library_has_score(lib_id, score.id)
 
 
-def user_can_assign_scores(user: dict) -> bool:
-    return is_maestro(user)
+def user_can_assign_scores(user: User) -> bool:
+    return user.is_maestro()
 
 
-def user_owns_sub_account(actor: dict, target: dict) -> bool:
-    if not is_maestro(actor):
+def user_owns_sub_account(actor: User, target: User) -> bool:
+    if not actor.is_maestro():
         return False
-    return target.get("maestro_id") == actor["id"]
+    return target.maestro_username == actor.id
 
 
-def admin_can_view_maestro(actor: dict, maestro_username: str) -> bool:
-    if not is_admin(actor):
+def admin_can_view_maestro(actor: User, maestro_username: str) -> bool:
+    if not actor.is_admin():
         return False
     owner = store.get_user_by_username(maestro_username)
-    return bool(owner and owner.get("role") == store.MAESTRO_ROLE)
+    return bool(owner and owner.is_maestro())
 
 
-def admin_can_preview_user(admin: dict, target: dict) -> bool:
-    if not is_admin(admin):
+def admin_can_preview_user(admin: User, target: User) -> bool:
+    if not admin.is_admin():
         return False
-    role = target.get("role", "")
-    if role == store.MAESTRO_ROLE:
-        return True
-    return role in store.SUB_ACCOUNT_ROLES
+    return target.is_maestro()

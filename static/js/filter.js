@@ -26,6 +26,8 @@
   }
 
   function initFilterRoot(root) {
+    if (root.dataset.filterBound === "true") return;
+    root.dataset.filterBound = "true";
     const workspace = root.closest(".library-workspace");
     if (!workspace) return;
     const input = root.querySelector("[data-filter-input]");
@@ -53,7 +55,7 @@
       let visible = 0;
       let visibleFolders = 0;
       if (list) {
-        list.querySelectorAll(".folder-list-entry").forEach((row) => {
+        list.querySelectorAll(".folder-list-entry, .folder-parent-entry").forEach((row) => {
           const name = (row.dataset.filterName || row.querySelector(".folder-list-name")?.textContent || "").toLowerCase();
           const show = !q || name.includes(q);
           row.classList.toggle("filter-hidden", !show);
@@ -121,8 +123,8 @@
     applyFilter();
   }
 
-  function initAll() {
-    document.querySelectorAll("[data-filter-root]").forEach(initFilterRoot);
+  function initAll(root) {
+    (root || document).querySelectorAll("[data-filter-root]").forEach(initFilterRoot);
   }
 
   function reapplyAll() {
@@ -130,5 +132,4 @@
   }
 
   window.ScoreFilter = { initAll, reapplyAll };
-  document.addEventListener("DOMContentLoaded", initAll);
 })();

@@ -6,7 +6,9 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}{{ browser_title }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  {% if maestro_brand and maestro_brand.theme_url %}
+  {% if page_theme == 'admin' %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+  {% elif maestro_brand and maestro_brand.theme_url %}
   <link rel="stylesheet" href="{{ maestro_brand.theme_url }}">
   {% endif %}
   {% block head %}{% endblock %}
@@ -15,6 +17,7 @@
   {% block body %}{% endblock %}
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
   <script src="{{ url_for('static', filename='js/csrf.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/system_info.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

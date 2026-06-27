@@ -88,30 +88,34 @@
     if (!window.confirm(msg)) return;
     const res = await Csrf.fetch(`/admin/maestros/${maestroId}`, { method: "DELETE" });
     if (!res.ok && window.showToast) showToast("Delete failed", true);
-    else window.location.href = "/admin";
+    else if (window.PageNav?.refreshAdmin) await window.PageNav.refreshAdmin({});
+    else window.location.assign("/admin");
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    const root = document.getElementById("admin-root");
+    if (!root) return;
+
     const addBtn = document.getElementById("add-maestro-btn");
     if (addBtn) addBtn.addEventListener("click", () => openMaestroDialog("new"));
 
-    document.querySelectorAll(".maestro-edit-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    root.addEventListener("click", (event) => {
+      const editBtn = event.target.closest(".maestro-edit-btn");
+      if (editBtn && root.contains(editBtn)) {
         openMaestroDialog("edit", {
-          id: btn.dataset.maestroId,
-          displayName: btn.dataset.displayName,
-          username: btn.dataset.username,
-          siteTitle: btn.dataset.siteTitle || "",
-          showSiteTitle: btn.dataset.showSiteTitle !== "0",
-          logotypeUrl: btn.dataset.logotypeUrl || "",
+          id: editBtn.dataset.maestroId,
+          displayName: editBtn.dataset.displayName,
+          username: editBtn.dataset.username,
+          siteTitle: editBtn.dataset.siteTitle || "",
+          showSiteTitle: editBtn.dataset.showSiteTitle !== "0",
+          logotypeUrl: editBtn.dataset.logotypeUrl || "",
         });
-      });
-    });
-
-    document.querySelectorAll(".maestro-delete-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        deleteMaestro(btn.dataset.maestroId, btn.dataset.displayName);
-      });
+        return;
+      }
+      const deleteBtn = event.target.closest(".maestro-delete-btn");
+      if (deleteBtn && root.contains(deleteBtn)) {
+        deleteMaestro(deleteBtn.dataset.maestroId, deleteBtn.dataset.displayName);
+      }
     });
 
     const deleteBtn = document.getElementById("maestro-delete-btn");

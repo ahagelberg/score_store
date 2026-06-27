@@ -27,13 +27,19 @@ from flask import (
 from itsdangerous import BadSignature, SignatureExpired, URLSafeSerializer, URLSafeTimedSerializer
 from werkzeug.exceptions import HTTPException
 
+import constants
 import store
 import policy
+import system_info
+from models.score import Score
+from models.user import User
 import user_handout
 
-APP_TITLE = "Score Store"
+APP_TITLE = constants.APP_NAME
 UPLOAD_SCORE_LABEL = "Upload score"
 SCORE_LIST_TITLE = "Scores"
+USER_TREE_CHOIRS_SECTION_TITLE = "Choirs"
+USER_TREE_USERS_SECTION_TITLE = "Users"
 VIEWER_MAIN_FILE_LABEL = "Score"
 SESSION_USER_KEY = "user_id"
 CSRF_SESSION_KEY = "_csrf_token"
@@ -59,6 +65,8 @@ DEV_MODE_ENV = "FLASK_DEBUG"
 DEV_MODE_CLI_FLAG = "--dev"
 GUNICORN_WORKERS_ENV = "GUNICORN_WORKERS"
 GUNICORN_SHUTDOWN_WAIT_SEC = 5
+AJAX_REQUEST_HEADER = "X-Requested-With"
+AJAX_REQUEST_VALUE = "XMLHttpRequest"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -82,12 +90,21 @@ def session_user() -> dict | None:
     return store.get_user(uid)
 
 
-def current_user() -> dict | None:
-    """Effective user for library/score UI and permissions; honors admin ?preview= impersonation."""
+def preview_token_from_request() -> str:
     token = request.args.get(PREVIEW_TOKEN_PARAM, "")
     if token:
+        return token
+    if request.method == "POST":
+        return request.form.get(PREVIEW_TOKEN_PARAM, "")
+    return ""
+
+
+def current_user() -> dict | None:
+    """Effective user for library/score UI and permissions; honors admin ?preview= impersonation."""
+    token = preview_token_from_request()
+    if token:
         admin = session_user()
-        if admin and policy.is_admin(admin):
+        if admin and admin.is_admin():
             preview_uid = decode_preview_token(token)
             if preview_uid:
                 target = store.get_user(preview_uid)
@@ -115,11 +132,11 @@ def decode_preview_token(token: str) -> str | None:
 
 
 def preview_request_active() -> bool:
-    token = request.args.get(PREVIEW_TOKEN_PARAM, "")
+    token = preview_token_from_request()
     if not token:
         return False
     admin = session_user()
-    if not admin or not policy.is_admin(admin):
+    if not admin or not admin.is_admin():
         return False
     preview_uid = decode_preview_token(token)
     if not preview_uid:
@@ -132,16 +149,17 @@ def preview_mutations_blocked() -> bool:
     if not preview_request_active():
         return False
     actor = maestro_management_actor()
-    return not (actor and policy.is_maestro(current_user()))
+    effective = current_user()
+    return not (actor and effective and effective.is_maestro())
 
 
 def maestro_management_actor() -> dict | None:
     session = session_user()
-    if session and policy.is_maestro(session):
+    if session and session.is_maestro():
         return session
     if preview_request_active():
         effective = current_user()
-        if effective and policy.is_maestro(effective):
+        if effective and effective.is_maestro():
             return effective
     return None
 
@@ -188,7 +206,7 @@ def role_required(*roles):
         @login_required
         def wrapped(*args, **kwargs):
             user = account_user()
-            if not user or user["role"] not in roles:
+            if not user or user.role not in roles:
                 abort(403)
             return view(*args, **kwargs)
         return wrapped
@@ -200,7 +218,8 @@ def maestro_scope_required(view):
     @wraps(view)
     @login_required
     def wrapped(*args, **kwargs):
-        if not policy.is_maestro(current_user()):
+        user = current_user()
+        if not user or not user.is_maestro():
             abort(403)
         return view(*args, **kwargs)
     return wrapped
@@ -210,10 +229,10 @@ def password_secret() -> str:
     return app.secret_key
 
 
-def home_url_for_user(user: dict) -> str:
-    if policy.is_admin(user):
+def home_url_for_user(user: User) -> str:
+    if user.is_admin():
         return url_for("admin")
-    if policy.is_maestro(user):
+    if user.is_maestro():
         return url_for("maestro")
     return url_for("library")
 
@@ -264,7 +283,7 @@ def file_json(file_entry: dict) -> dict:
     return {**file_entry, "type_label": store.aux_file_type_label(file_entry)}
 
 
-def score_metadata_from_data(data, user: dict | None = None) -> dict:
+def score_metadata_from_data(data, user: User | None = None) -> dict:
     metadata = {
         "title": data.get("title", ""),
         "composer": data.get("composer", ""),
@@ -277,7 +296,7 @@ def score_metadata_from_data(data, user: dict | None = None) -> dict:
     return metadata
 
 
-def library_scores(library_id: str, query: str, tag: str | None) -> list[dict]:
+def library_scores(library_id: str, query: str, tag: str | None) -> list[Score]:
     return store.scores_for_library_sorted(library_id, query, tag)
 
 
@@ -300,32 +319,32 @@ def score_view_nav_params_from_panel(library_panel: dict) -> dict:
     return params
 
 
-def view_library_id(user: dict) -> str:
+def view_library_id(user: User) -> str:
     nav = score_view_nav_params_from_request()
     library_ctx = nav.get("lib")
     if not library_ctx:
-        if policy.is_maestro(user):
+        if user.is_maestro():
             library_ctx = "global"
-        elif policy.is_admin(user):
+        elif user.is_admin():
             library_ctx = "global"
         else:
-            library_ctx = f"{LIBRARY_CTX_USER_PREFIX}{user['id']}"
+            library_ctx = f"{LIBRARY_CTX_USER_PREFIX}{user.id}"
     return _resolve_library_ctx(user, library_ctx)
 
 
-def notes_storage_for_user(user: dict | None) -> str:
+def notes_storage_for_user(user: User | None) -> str:
     if not user:
         return "none"
-    if policy.is_admin(user) and not preview_request_active():
+    if user.is_admin() and not preview_request_active():
         return "none"
-    if policy.is_choir(user):
+    if user.is_choir():
         return "local"
-    if policy.is_singer(user) or policy.is_maestro(user):
+    if user.is_singer() or user.is_maestro():
         return "server"
     return "none"
 
 
-def resolve_score_view_ids(user: dict, score_id: str) -> list[str]:
+def resolve_score_view_ids(user: User, score_id: str) -> list[str]:
     ctx_token = request.args.get("ctx")
     if ctx_token:
         decoded = decode_ctx(ctx_token)
@@ -343,11 +362,11 @@ def resolve_score_view_ids(user: dict, score_id: str) -> list[str]:
         return []
     nav = score_view_nav_params_from_request()
     scores = library_scores(library_id, nav.get("q", ""), nav.get("tag") or None)
-    return [score["id"] for score in scores if score.get("id")]
+    return [score.id for score in scores if score.id]
 
 
 def filter_viewable_score_ids(
-    user: dict,
+    user: User,
     score_ids: list,
     current_score_id: str,
     library_id: str,
@@ -358,19 +377,19 @@ def filter_viewable_score_ids(
     for sid in score_ids:
         if not isinstance(sid, str) or not sid:
             continue
-        meta = store.load_score_meta(sid)
-        if meta and policy.user_can_view_score(user, meta, library_id):
+        score = store.load_score_meta(sid)
+        if score and policy.user_can_view_score(user, score, library_id):
             viewable.append(sid)
     if current_score_id not in viewable:
         return []
     return viewable
 
 
-def build_library_back_url(user: dict, nav_query: dict) -> str:
-    if policy.is_admin(user):
+def build_library_back_url(user: User, nav_query: dict) -> str:
+    if user.is_admin():
         endpoint = "admin"
         params = {key: nav_query[key] for key in nav_preserve_keys(endpoint) if nav_query.get(key)}
-    elif policy.is_maestro(user):
+    elif user.is_maestro():
         endpoint = "maestro"
         params = {key: nav_query[key] for key in nav_preserve_keys(endpoint) if nav_query.get(key)}
         library_ctx = nav_query.get("lib", "")
@@ -386,7 +405,7 @@ def build_library_panel(
     *,
     panel_title: str,
     lib: dict,
-    scores: list,
+    scores: list[Score],
     all_tags: list,
     library_ctx: str,
     nav_endpoint: str,
@@ -425,10 +444,10 @@ def build_library_panel(
         "draggable_score": draggable_score,
         "upload_label": UPLOAD_SCORE_LABEL,
         "scores_title": SCORE_LIST_TITLE,
-        "score_ids": [s["id"] for s in scores if s.get("id")],
+        "score_ids": [score.id for score in scores if score.id],
         "assign_user": assign_user,
         "summary_opens_viewer": summary_opens_viewer,
-        "folders": lib.get("folders", []),
+        "folders": lib["folders"],
         "folder_tree": store.build_folder_tree(lib),
     }
     if disk_usage:
@@ -439,7 +458,7 @@ def build_library_panel(
 
 def resolve_library_panel(
     *,
-    actor: dict,
+    actor: User,
     library_ctx: str,
     nav_endpoint: str,
     preserve: dict | None = None,
@@ -456,13 +475,13 @@ def resolve_library_panel(
     lib_id = library_id_from_ctx(library_ctx)
     lib = store.load_library(lib_id)
     scores = library_scores(lib_id, query, active_tag)
-    tags = store.collect_tags(lib.get("score_order", []))
+    tags = store.collect_tags(lib.score_order)
     caps = policy.library_panel_capabilities(actor, lib_id)
-    title = panel_title or lib.get("display_name") or "Library"
+    title = panel_title or lib.display_name or "Library"
     disk_usage = store.disk_usage_stats() if include_disk_usage else None
     return build_library_panel(
         panel_title=title,
-        lib=lib,
+        lib=lib.to_dict(),
         scores=scores,
         all_tags=tags,
         library_ctx=library_ctx,
@@ -491,7 +510,7 @@ def build_user_tree(ctx: dict) -> list[dict]:
     selected_lib = ctx.get("selected_lib")
     if ctx.get("show_maestro_nodes"):
         for maestro in store.get_maestro_accounts():
-            uname = maestro["username"]
+            uname = maestro.username
             stats = store.maestro_stats(uname)
             children: list[dict] = []
             if ctx.get("show_global_library_nodes"):
@@ -502,22 +521,23 @@ def build_user_tree(ctx: dict) -> list[dict]:
                     "maestro_username": uname,
                     "active": selected_maestro == uname and selected_lib == "global",
                 })
-            for sub in store.get_users_for_maestro(maestro["id"]):
-                children.append({
-                    "kind": "user",
-                    "id": sub["id"],
-                    "username": sub["username"],
-                    "display_name": sub["display_name"],
-                    "role": sub["role"],
-                    "maestro_username": uname,
-                    "active": selected_maestro == uname and selected_user == sub["id"],
-                })
+            if ctx.get("show_sub_account_nodes"):
+                for sub in store.get_users_for_maestro(maestro.id):
+                    children.append({
+                        "kind": "user",
+                        "id": sub.id,
+                        "username": sub.username,
+                        "display_name": sub.display_name,
+                        "role": sub.role,
+                        "maestro_username": uname,
+                        "active": selected_maestro == uname and selected_user == sub.id,
+                    })
             maestro_cfg = store.load_maestro_config(uname)
             nodes.append({
                 "kind": "maestro",
-                "id": maestro["id"],
+                "id": maestro.id,
                 "username": uname,
-                "display_name": maestro["display_name"],
+                "display_name": maestro.display_name,
                 "site_title": maestro_cfg.get("site_title", ""),
                 "show_site_title": maestro_cfg.get("show_site_title", store.DEFAULT_SHOW_SITE_TITLE),
                 "logotype_url": admin_maestro_logotype_url(uname),
@@ -530,11 +550,11 @@ def build_user_tree(ctx: dict) -> list[dict]:
     for sub in store.get_users_for_maestro(maestro_id):
         entry = {
             "kind": "user",
-            "id": sub["id"],
-            "username": sub["username"],
-            "display_name": sub["display_name"],
-            "role": sub["role"],
-            "active": selected_user == sub["id"],
+            "id": sub.id,
+            "username": sub.username,
+            "display_name": sub.display_name,
+            "role": sub.role,
+            "active": selected_user == sub.id,
         }
         if ctx.get("show_user_edit"):
             entry["password"] = store.password_for_display(sub)
@@ -553,14 +573,14 @@ def user_tree_node_url(endpoint: str, node: dict, query: str = "", active_tag: s
     elif kind == "user":
         if node.get("maestro_username"):
             preserve["maestro"] = node["maestro_username"]
-        preserve["user"] = node["id"]
+        preserve["user"] = node['id']
     return build_nav_url(endpoint, query=query, active_tag=active_tag or "", preserve=preserve)
 
 
-def resolve_maestro_brand(user: dict | None) -> dict | None:
+def resolve_maestro_brand(user: User | None) -> dict | None:
     if not user:
         return None
-    if policy.is_admin(user):
+    if user.is_admin():
         maestro_param = request.args.get("maestro", "").strip().lower()
         if not maestro_param or not policy.admin_can_view_maestro(user, maestro_param):
             return None
@@ -576,7 +596,7 @@ def resolve_maestro_brand(user: dict | None) -> dict | None:
     if logotype_path:
         logotype_url = append_scope_query_params(url_for("maestro_logotype", maestro_username=username))
     theme_url = None
-    if store.maestro_has_theme(username):
+    if not user.is_admin() and store.maestro_has_theme(username):
         theme_url = append_scope_query_params(url_for("maestro_theme_css", maestro_username=username))
     has_logotype = bool(logotype_path)
     return {
@@ -595,16 +615,18 @@ def scope_query_params() -> dict:
         return params
     for key in REQUEST_SCOPE_QUERY_KEYS:
         value = request.args.get(key)
+        if not value and request.method == "POST":
+            value = request.form.get(key)
         if value:
             params[key] = value
     return params
 
 
-def activate_maestro_for_user(user: dict) -> None:
-    if policy.is_maestro(user):
-        store.activate_maestro_data(user["username"])
+def activate_maestro_for_user(user: User) -> None:
+    if user.is_maestro():
+        store.activate_maestro_data(user.username)
         return
-    if user.get("role") in store.SUB_ACCOUNT_ROLES:
+    if user.role in store.SUB_ACCOUNT_ROLES:
         try:
             store.activate_maestro_data(store.maestro_folder_username(user))
         except ValueError:
@@ -626,14 +648,14 @@ def admin_maestro_logotype_url(maestro_username: str) -> str | None:
     return url_for("maestro_logotype", maestro_username=uname, maestro=uname)
 
 
-def _maestro_asset_allowed(actor: dict, maestro_username: str) -> bool:
+def _maestro_asset_allowed(actor: User, maestro_username: str) -> bool:
     uname = maestro_username.strip().lower()
     if preview_request_active():
         try:
             return store.maestro_folder_username(actor) == uname
         except ValueError:
             return False
-    if policy.is_admin(actor):
+    if actor.is_admin():
         preview = request.args.get("maestro", "").strip().lower()
         return preview == uname and policy.admin_can_view_maestro(actor, uname)
     try:
@@ -642,9 +664,13 @@ def _maestro_asset_allowed(actor: dict, maestro_username: str) -> bool:
         return False
 
 
+def _template_score(score: Score | dict) -> Score:
+    return score if isinstance(score, Score) else Score.from_dict(score)
+
+
 @app.template_global()
 def user_can_edit_score(user, score):
-    return policy.user_can_edit_score(user, score)
+    return policy.user_can_edit_score(user, _template_score(score))
 
 
 @app.template_global()
@@ -659,12 +685,12 @@ def score_subtitle_line(score):
 
 @app.template_global()
 def user_can_hard_delete_score(user, score, library_id=None):
-    return policy.user_can_hard_delete_score(user, score, library_id)
+    return policy.user_can_hard_delete_score(user, _template_score(score), library_id)
 
 
 @app.template_global()
 def user_can_remove_score(user, score, library_id):
-    return policy.user_can_remove_score(user, score, library_id)
+    return policy.user_can_remove_score(user, _template_score(score), library_id)
 
 
 @app.template_global()
@@ -714,9 +740,9 @@ def build_nav_url(endpoint, query="", active_tag="", preserve=None):
     return url_for(endpoint, **params)
 
 
-def preview_redirect_url(user: dict) -> str:
-    token = encode_preview_token(user["id"])
-    role = user.get("role", "")
+def preview_redirect_url(user: User) -> str:
+    token = encode_preview_token(user.id)
+    role = user.role
     if role == store.MAESTRO_ROLE:
         return url_for("maestro", **{PREVIEW_TOKEN_PARAM: token})
     if role in store.SUB_ACCOUNT_ROLES:
@@ -739,8 +765,134 @@ def csrf_token():
     return ensure_csrf_token()
 
 
-_SETUP_EXEMPT = frozenset({"setup", "static"})
-PREVIEW_ALLOWED_POST_ENDPOINTS = frozenset({"mint_viewer_ctx"})
+_SETUP_EXEMPT = frozenset({"setup", "static", "system_info_api"})
+def redirect_maestro(**params):
+    if "user" not in params and request.args.get("user"):
+        params["user"] = request.args.get("user")
+    return redirect(append_scope_query_params(url_for("maestro", **params)))
+
+
+def ajax_request() -> bool:
+    return request.headers.get(AJAX_REQUEST_HEADER) == AJAX_REQUEST_VALUE
+
+
+def ajax_ok(message: str):
+    return jsonify({"ok": True, "message": message})
+
+
+def ajax_error(message: str, status: int = 400):
+    return jsonify({"error": message}), status
+
+
+def user_form_error(message: str, redirect_fn=redirect_maestro, **redirect_kw):
+    if ajax_request():
+        return ajax_error(message)
+    flash(message, "error")
+    return redirect_fn(**redirect_kw)
+
+
+def user_form_success(message: str, redirect_fn=redirect_maestro, **redirect_kw):
+    if ajax_request():
+        payload = {"ok": True, "message": message}
+        if redirect_kw:
+            payload["nav"] = redirect_kw
+        return jsonify(payload)
+    flash(message, "success")
+    return redirect_fn(**redirect_kw)
+
+
+def _maestro_url_params(selected_user: str | None, query: str, tag: str | None) -> dict:
+    params = {}
+    if selected_user:
+        params["user"] = selected_user
+    if query:
+        params["q"] = query
+    if tag:
+        params["tag"] = tag
+    return params
+
+
+def _admin_url_params(selected_maestro: str | None, query: str, tag: str | None) -> dict:
+    params = {}
+    if selected_maestro:
+        params["maestro"] = selected_maestro
+    if query:
+        params["q"] = query
+    if tag:
+        params["tag"] = tag
+    return params
+
+
+def _maestro_ajax_response(
+    user_library_panel,
+    user_tree,
+    tree_ctx,
+    query: str,
+    active_tag: str | None,
+    selected_user: str | None,
+):
+    params = _maestro_url_params(selected_user, query, active_tag)
+    return jsonify({
+        "url": append_scope_query_params(url_for("maestro", **params)),
+        "user_library_html": render_template(
+            "partials/maestro_user_library_column.html",
+            user_library_panel=user_library_panel,
+        ),
+        "user_tree_html": render_template(
+            "partials/user_tree_panel.html",
+            panel_title="Users",
+            user_tree=user_tree,
+            tree_ctx=tree_ctx,
+            query=query,
+            active_tag=active_tag,
+        ),
+    })
+
+
+def _admin_ajax_response(
+    library_panel,
+    maestro_stats,
+    user_tree,
+    tree_ctx,
+    query: str,
+    active_tag: str | None,
+    selected_maestro: str | None,
+):
+    params = _admin_url_params(selected_maestro, query, active_tag)
+    return jsonify({
+        "url": append_scope_query_params(url_for("admin", **params)),
+        "library_html": render_template(
+            "partials/admin_library_column.html",
+            library_panel=library_panel,
+            maestro_stats=maestro_stats,
+        ),
+        "user_tree_html": render_template(
+            "partials/user_tree_panel.html",
+            panel_title="Maestros",
+            user_tree=user_tree,
+            tree_ctx=tree_ctx,
+            query=query,
+            active_tag=active_tag,
+        ),
+    })
+
+
+def require_maestro_management_actor():
+    actor = maestro_management_actor()
+    if actor:
+        return actor
+    if ajax_request():
+        return None
+    abort(403)
+
+
+PREVIEW_ALLOWED_POST_ENDPOINTS = frozenset({
+    "mint_viewer_ctx",
+    "maestro_user_new",
+    "maestro_user_edit",
+    "maestro_user_delete",
+    "maestro_assign",
+})
 
 
 @app.before_request
@@ -758,7 +910,7 @@ def _activate_maestro_data_scope():
     actor = session_user()
     if not actor:
         return
-    if policy.is_admin(actor):
+    if actor.is_admin():
         maestro_param = request.args.get("maestro", "").strip().lower()
         if maestro_param and policy.admin_can_view_maestro(actor, maestro_param):
             store.activate_maestro_data(maestro_param)
@@ -788,6 +940,11 @@ def _csrf_protect():
     if request.endpoint == "static":
         return
     validate_csrf()
+
+
+@app.get("/api/system")
+def system_info_api():
+    return jsonify(system_info.system_info())
 
 
 @app.route("/setup", methods=["GET", "POST"])
@@ -831,15 +988,17 @@ def inject_globals():
     if brand and brand.get("site_title"):
         browser_title = brand["site_title"]
     elif user:
-        browser_title = f"{APP_TITLE} - {user['display_name']}"
+        browser_title = f"{APP_TITLE} - {user.display_name}"
     preview_mode = preview_request_active()
     preview_user = user if preview_mode else None
+    page_theme = "admin" if user and user.is_admin() and request.endpoint == "admin" else None
     return {
         "app_title": APP_TITLE,
         "browser_title": browser_title,
         "current_user": user,
         "password_min_len": store.SETUP_PASSWORD_MIN_LEN,
         "maestro_brand": brand,
+        "page_theme": page_theme,
         "preview_mode": preview_mode,
         "preview_user": preview_user,
         "notes_storage": notes_storage_for_user(user),
@@ -857,7 +1016,7 @@ def login():
         user = store.get_user_by_username(username)
         secret = password_secret()
         if user and store.verify_user_password(user, password, secret):
-            session[SESSION_USER_KEY] = user["id"]
+            session[SESSION_USER_KEY] = user.id
             nxt = safe_redirect_target(request.args.get("next"), home_url_for_user(user))
             return redirect(nxt)
         flash("Invalid username or password", "error")
@@ -881,9 +1040,9 @@ def index():
 @login_required
 def library():
     user = current_user()
-    if policy.is_admin(user) or policy.is_maestro(user):
+    if user.is_admin() or user.is_maestro():
         abort(403)
-    lib_id = user["id"]
+    lib_id = user.id
     query = request.args.get("q", "")
     tag = request.args.get("tag")
     caps = policy.library_panel_capabilities(user, lib_id)
@@ -923,12 +1082,10 @@ def admin():
     query = request.args.get("q", "")
     tag = request.args.get("tag")
     selected_maestro = request.args.get("maestro", "").strip().lower() or None
-    selected_user = request.args.get("user")
-    selected_lib = request.args.get("lib")
-    if not selected_maestro and not selected_user:
+    if not selected_maestro:
         maestros = store.get_maestro_accounts()
         if len(maestros) == 1:
-            params = {"maestro": maestros[0]["username"]}
+            params = {"maestro": maestros[0].username}
             if query:
                 params["q"] = query
             if tag:
@@ -936,6 +1093,7 @@ def admin():
             return redirect(url_for("admin", **params))
     tree_ctx = {
         "show_maestro_nodes": True,
+        "show_sub_account_nodes": False,
         "show_global_library_nodes": False,
         "show_user_edit": False,
         "show_maestro_actions": True,
@@ -945,8 +1103,8 @@ def admin():
         "query": query,
         "active_tag": tag,
         "selected_maestro": selected_maestro,
-        "selected_user": selected_user,
-        "selected_lib": selected_lib,
+        "choirs_section_title": USER_TREE_CHOIRS_SECTION_TITLE,
+        "users_section_title": USER_TREE_USERS_SECTION_TITLE,
     }
     user_tree = build_user_tree(tree_ctx)
     library_panel = None
@@ -954,31 +1112,26 @@ def admin():
     if selected_maestro and policy.admin_can_view_maestro(user, selected_maestro):
         maestro_stats = store.maestro_stats(selected_maestro)
         preserve = nav_preserve_from_request("admin")
-        if selected_user:
-            target = store.get_user(selected_user)
-            if not target or target.get("maestro_id") != store.get_user_by_username(selected_maestro)["id"]:
-                abort(403)
-            library_panel = resolve_library_panel(
-                actor=user,
-                library_ctx=f"{LIBRARY_CTX_USER_PREFIX}{selected_user}",
-                nav_endpoint="admin",
-                preserve=preserve,
-                query=query,
-                active_tag=tag,
-                draggable_score=False,
-                summary_opens_viewer=True,
-            )
-        else:
-            library_panel = resolve_library_panel(
-                actor=user,
-                library_ctx="global",
-                nav_endpoint="admin",
-                preserve=preserve,
-                query=query,
-                active_tag=tag,
-                panel_title=store.GLOBAL_LIBRARY_DISPLAY_NAME,
-                include_disk_usage=True,
-            )
+        library_panel = resolve_library_panel(
+            actor=user,
+            library_ctx="global",
+            nav_endpoint="admin",
+            preserve=preserve,
+            query=query,
+            active_tag=tag,
+            panel_title=store.GLOBAL_LIBRARY_DISPLAY_NAME,
+            include_disk_usage=True,
+        )
+    if ajax_request():
+        return _admin_ajax_response(
+            library_panel,
+            maestro_stats,
+            user_tree,
+            tree_ctx,
+            query,
+            tag,
+            selected_maestro,
+        )
     return render_template(
         "admin.html",
         user_tree=user_tree,
@@ -1028,18 +1181,30 @@ def maestro():
     can_manage_users = maestro_management_actor() is not None
     tree_ctx = {
         "show_maestro_nodes": False,
+        "show_sub_account_nodes": True,
         "show_global_library_nodes": False,
         "show_user_edit": can_manage_users,
         "show_maestro_actions": False,
         "show_user_preview": False,
         "drop_target_users": can_manage_users,
         "nav_endpoint": "maestro",
-        "maestro_id": user["id"],
+        "maestro_id": user.id,
         "query": query,
         "active_tag": tag,
         "selected_user": selected_user,
+        "choirs_section_title": USER_TREE_CHOIRS_SECTION_TITLE,
+        "users_section_title": USER_TREE_USERS_SECTION_TITLE,
     }
     user_tree = build_user_tree(tree_ctx)
+    if ajax_request():
+        return _maestro_ajax_response(
+            user_library_panel,
+            user_tree,
+            tree_ctx,
+            query,
+            tag,
+            selected_user,
+        )
     return render_template(
         "maestro.html",
         global_library_panel=global_library_panel,
@@ -1055,94 +1220,93 @@ def maestro():
 @app.post("/maestro/users/new")
 @login_required
 def maestro_user_new():
-    actor = maestro_management_actor()
+    actor = require_maestro_management_actor()
     if not actor:
-        abort(403)
+        return ajax_error("Not authorized", 403)
     display_name = request.form.get("display_name", "").strip()
     username = request.form.get("username", "").strip().lower()
     password = request.form.get("password", "")
-    role = request.form.get("role", policy.SINGER_ROLE)
+    role = request.form.get("role", store.SINGER_ROLE)
     if not display_name or not username or not password:
-        flash("All fields required", "error")
-        return redirect(url_for("maestro"))
+        return user_form_error("All fields required")
     if role not in store.SUB_ACCOUNT_ROLES:
-        flash("Invalid role", "error")
-        return redirect(url_for("maestro"))
+        return user_form_error("Invalid role")
     try:
-        store.create_sub_account(display_name, username, password, role, actor["id"], password_secret())
-    except ValueError as e:
-        flash(str(e), "error")
-        return redirect(url_for("maestro"))
-    flash("User created", "success")
-    return redirect(url_for("maestro"))
+        store.create_sub_account(
+            display_name,
+            username,
+            password,
+            role,
+            actor.username if actor.is_maestro() else store.maestro_account_id(actor),
+            password_secret(),
+        )
+    except (ValueError, RuntimeError) as e:
+        return user_form_error(str(e))
+    return user_form_success("User created", user=username)
 
 
 @app.post("/maestro/users/<user_id>/edit")
 @login_required
 def maestro_user_edit(user_id):
-    actor = maestro_management_actor()
+    actor = require_maestro_management_actor()
     if not actor:
-        abort(403)
+        return ajax_error("Not authorized", 403)
     user = store.get_user(user_id)
     if not user or not policy.user_owns_sub_account(actor, user):
         abort(404)
     display_name = request.form.get("display_name", "").strip()
     username = request.form.get("username", "").strip().lower()
     password = request.form.get("password", "")
-    role = request.form.get("role", user["role"])
+    role = request.form.get("role", user.role)
     if not display_name or not username:
-        flash("Display name and username required", "error")
-        return redirect(url_for("maestro"))
+        return user_form_error("Display name and username required", user=request.args.get("user"))
     if role not in store.SUB_ACCOUNT_ROLES:
-        flash("Invalid role", "error")
-        return redirect(url_for("maestro"))
+        return user_form_error("Invalid role", user=request.args.get("user"))
     existing = store.get_user_by_username(username)
-    if existing and existing["id"] != user_id:
-        flash("Username taken", "error")
-        return redirect(url_for("maestro"))
-    user["display_name"] = display_name
-    user["username"] = username
-    user["role"] = role
-    user["maestro_id"] = actor["id"]
+    if existing and existing.username != user.username:
+        return user_form_error("Username taken", user=request.args.get("user"))
+    user.display_name = display_name
+    user.role = role
+    user.maestro_username = actor.username
     if password:
         store.set_user_password(user, password, password_secret())
     else:
         store.finalize_user_role(user, password_secret())
-    new_id = store.rename_user_id(user_id, username)
-    user["id"] = new_id
-    users = store.load_users()
-    for i, u in enumerate(users):
-        if u["id"] in (user_id, new_id):
-            users[i] = user
-            break
-    store.save_users(users)
-    store.ensure_library(new_id)
-    flash("User updated", "success")
-    selected = request.args.get("user")
+    try:
+        new_username = store.rename_username(user.username, username)
+        user.username = new_username
+        with store.maestro_data_scope(store.maestro_folder_username(actor)):
+            store.upsert_user(user)
+            store.ensure_library(new_username)
+    except (ValueError, RuntimeError) as e:
+        return user_form_error(str(e), user=request.args.get("user"))
+    selected = request.args.get("user") or request.form.get("user")
     if selected == user_id:
-        selected = new_id
-    return redirect(url_for("maestro", user=selected))
+        selected = new_username
+    redirect_kw = {"user": selected} if selected else {}
+    return user_form_success("User updated", **redirect_kw)
 
 
 @app.post("/maestro/users/<user_id>/delete")
 @login_required
 def maestro_user_delete(user_id):
-    actor = maestro_management_actor()
+    actor = require_maestro_management_actor()
     if not actor:
-        abort(403)
+        return ajax_error("Not authorized", 403)
     target = store.get_user(user_id)
     if not target or not policy.user_owns_sub_account(actor, target):
         abort(404)
     try:
         store.delete_user(user_id)
     except ValueError as e:
-        flash(str(e), "error")
-        return redirect(url_for("maestro", user=request.args.get("user")))
-    flash("User deleted", "success")
-    selected = request.args.get("user")
-    if selected == user_id:
-        return redirect(url_for("maestro"))
-    return redirect(url_for("maestro", user=selected))
+        return user_form_error(str(e), user=request.args.get("user"))
+    selected = request.args.get("user") or request.form.get("user")
+    redirect_kw = {}
+    if selected and selected != user_id:
+        redirect_kw["user"] = selected
+    elif selected == user_id:
+        redirect_kw["user"] = ""
+    return user_form_success("User deleted", **redirect_kw)
 
 
 @app.post("/admin/maestros")
@@ -1182,16 +1346,16 @@ def admin_maestro_new():
         flash(str(e), "error")
         return redirect(url_for("admin"))
     flash("Maestro created", "success")
-    return redirect(url_for("admin", maestro=user["username"]))
+    return redirect(url_for("admin", maestro=user.username))
 
 
 @app.post("/admin/maestros/<maestro_id>")
 @role_required(store.ADMIN_ROLE)
 def admin_maestro_edit(maestro_id):
     target = store.get_user(maestro_id)
-    if not target or target.get("role") != store.MAESTRO_ROLE:
+    if not target or target.role != store.MAESTRO_ROLE:
         abort(404)
-    old_username = target["username"]
+    old_username = target.username
     display_name = request.form.get("display_name", "").strip()
     username = request.form.get("username", "").strip().lower()
     password = request.form.get("password", "")
@@ -1200,7 +1364,7 @@ def admin_maestro_edit(maestro_id):
         flash("Display name and username required", "error")
         return redirect(url_for("admin", maestro=old_username))
     existing = store.get_user_by_username(username)
-    if existing and existing["id"] != maestro_id:
+    if existing and existing.username != maestro_id:
         flash("Username taken", "error")
         return redirect(url_for("admin", maestro=old_username))
     if username != old_username:
@@ -1209,16 +1373,11 @@ def admin_maestro_edit(maestro_id):
         except ValueError as e:
             flash(str(e), "error")
             return redirect(url_for("admin", maestro=old_username))
-    target["display_name"] = display_name
-    target["username"] = username
+    target.display_name = display_name
+    target.username = username
     if password:
         store.set_user_password(target, password, password_secret())
-    users = store.load_users()
-    for i, entry in enumerate(users):
-        if entry["id"] == maestro_id:
-            users[i] = target
-            break
-    store.save_users(users)
+    store.upsert_user(target)
     cfg = store.load_maestro_config(username)
     if site_title:
         cfg["site_title"] = site_title
@@ -1272,18 +1431,13 @@ def admin_change_password():
     if len(new_password) < store.SETUP_PASSWORD_MIN_LEN:
         flash(f"Password must be at least {store.SETUP_PASSWORD_MIN_LEN} characters", "error")
         return redirect(safe_redirect_target(request.referrer, url_for("admin")))
-    stored = store.get_user(user["id"])
+    stored = store.get_user(user.id)
     secret = password_secret()
     if not stored or not store.verify_user_password(stored, current_password, secret):
         flash("Current password is wrong", "error")
         return redirect(safe_redirect_target(request.referrer, url_for("admin")))
     store.set_user_password(stored, new_password, secret)
-    users = store.load_users()
-    for i, entry in enumerate(users):
-        if entry["id"] == stored["id"]:
-            users[i] = stored
-            break
-    store.save_users(users)
+    store.upsert_user(stored)
     flash("Password updated", "success")
     return redirect(safe_redirect_target(request.referrer, url_for("admin")))
 
@@ -1292,13 +1446,13 @@ def admin_change_password():
 @role_required(store.MAESTRO_ROLE)
 def maestro_appearance():
     user = current_user()
-    username = user["username"]
+    username = user.username
     if request.method == "POST":
         if not policy.user_can_edit_maestro_config(user, username):
             abort(403)
         site_title = request.form.get("site_title", "").strip()
         cfg = store.load_maestro_config(username)
-        cfg["site_title"] = site_title or user["display_name"]
+        cfg["site_title"] = site_title or user.display_name
         cfg["show_site_title"] = store.form_show_site_title_checked(request.form.get("show_site_title"))
         theme_text = request.form.get("theme_css_text", "")
         if theme_text.strip():
@@ -1371,18 +1525,13 @@ def maestro_change_password():
     if len(new_password) < store.SETUP_PASSWORD_MIN_LEN:
         flash(f"Password must be at least {store.SETUP_PASSWORD_MIN_LEN} characters", "error")
         return redirect(safe_redirect_target(request.referrer, url_for("maestro")))
-    stored = store.get_user(user["id"])
+    stored = store.get_user(user.id)
     secret = password_secret()
     if not stored or not store.verify_user_password(stored, current_password, secret):
         flash("Current password is wrong", "error")
         return redirect(safe_redirect_target(request.referrer, url_for("maestro")))
     store.set_user_password(stored, new_password, secret)
-    users = store.load_users()
-    for i, entry in enumerate(users):
-        if entry["id"] == stored["id"]:
-            users[i] = stored
-            break
-    store.save_users(users)
+    store.upsert_user(stored)
     flash("Password updated", "success")
     return redirect(safe_redirect_target(request.referrer, url_for("maestro")))
 
@@ -1392,7 +1541,7 @@ def _user_handout_context(user_id: str) -> dict:
     if not actor:
         abort(403)
     user = store.get_user(user_id)
-    if not user or user.get("role") not in store.SUB_ACCOUNT_ROLES:
+    if not user or user.role not in store.SUB_ACCOUNT_ROLES:
         abort(404)
     if not policy.user_owns_sub_account(actor, user):
         abort(403)
@@ -1438,15 +1587,15 @@ def maestro_assign():
     target = store.get_user(user_id)
     if not target or not policy.user_owns_sub_account(user, target):
         return json_error("User not found", 404)
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Score not found", 404)
     if assign:
         store.assign_score_to_folder(user_id, score_id, store.ROOT_FOLDER_ID)
     else:
         store.remove_score_from_library(user_id, score_id)
         return jsonify({"ok": True})
-    return jsonify({"ok": True, "score": meta})
+    return jsonify({"ok": True, "score": score.to_dict()})
 
 
 @app.post("/library/<library_ctx>/folders/new")
@@ -1483,13 +1632,13 @@ def folder_delete(library_ctx, folder_id):
     return jsonify({"ok": True})
 
 
-def _resolve_library_ctx(user: dict, library_ctx: str) -> str:
+def _resolve_library_ctx(user: User, library_ctx: str) -> str:
     if library_ctx == "global":
-        if policy.is_admin(user):
+        if user.is_admin():
             if not store.current_maestro_data():
                 abort(403)
             return store.GLOBAL_LIBRARY_ID
-        if policy.is_maestro(user):
+        if user.is_maestro():
             return store.GLOBAL_LIBRARY_ID
         abort(403)
     if library_ctx.startswith(LIBRARY_CTX_USER_PREFIX):
@@ -1497,22 +1646,22 @@ def _resolve_library_ctx(user: dict, library_ctx: str) -> str:
         target = store.get_user(uid)
         if not target:
             abort(404)
-        if policy.is_admin(user):
+        if user.is_admin():
             maestro_param = request.args.get("maestro", "").strip().lower()
             owner = store.get_user_by_username(maestro_param) if maestro_param else None
-            if not owner or target.get("maestro_id") != owner["id"]:
+            if not owner or target.maestro_username != owner.id:
                 abort(403)
             return uid
-        if policy.is_maestro(user):
+        if user.is_maestro():
             if policy.user_owns_sub_account(user, target):
                 return uid
             abort(403)
-        if user["id"] == uid:
+        if user.id == uid:
             return uid
         abort(403)
-    if policy.is_maestro(user):
+    if user.is_maestro():
         return store.GLOBAL_LIBRARY_ID
-    return user["id"]
+    return user.id
 
 
 @app.post("/library/<library_ctx>/scores/new")
@@ -1528,28 +1677,28 @@ def score_new(library_ctx):
     folder_id = request.form.get("folder_id", store.ROOT_FOLDER_ID)
     metadata = score_metadata_from_data(request.form)
     try:
-        meta = store.create_score_from_upload(lib_id, folder_id, upload, metadata, store.score_owner_id(user))
+        created = store.create_score_from_upload(lib_id, folder_id, upload, metadata, store.score_owner_id(user))
     except ValueError as e:
         return json_error(str(e))
-    return jsonify({"ok": True, "score": meta})
+    return jsonify({"ok": True, "score": created})
 
 
 @app.post("/scores/<score_id>/edit")
 @login_required
 def score_edit(score_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Not found", 404)
-    if not policy.user_can_edit_score(user, meta):
+    if not policy.user_can_edit_score(user, score):
         abort(403)
     data = request.get_json(silent=True) or request.form
     metadata = score_metadata_from_data(data, user)
     try:
-        meta = store.update_score_metadata(score_id, metadata, allow_year=policy.user_can_edit_score_year(user))
+        updated = store.update_score_metadata(score_id, metadata, allow_year=policy.user_can_edit_score_year(user))
     except ValueError as e:
         return json_error(str(e))
-    return jsonify({"ok": True, "score": meta})
+    return jsonify({"ok": True, "score": updated})
 
 
 @app.post("/library/<library_ctx>/scores/<score_id>/folder")
@@ -1557,10 +1706,10 @@ def score_edit(score_id):
 def score_set_folder(library_ctx, score_id):
     user = current_user()
     lib_id = _resolve_library_ctx(user, library_ctx)
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Not found", 404)
-    if not policy.user_can_set_score_folder(user, meta, lib_id):
+    if not policy.user_can_set_score_folder(user, score, lib_id):
         abort(403)
     data = request.get_json(silent=True) or request.form
     folder_id = data.get("folder_id", store.ROOT_FOLDER_ID)
@@ -1578,10 +1727,10 @@ def score_set_folder(library_ctx, score_id):
 @login_required
 def score_add_file(score_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Not found", 404)
-    if not policy.user_can_edit_score(user, meta):
+    if not policy.user_can_edit_score(user, score):
         abort(403)
     if request.is_json:
         data = request.get_json()
@@ -1604,8 +1753,8 @@ def score_add_file(score_id):
 @login_required
 def score_remove_file(score_id, file_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta or not policy.user_can_edit_score(user, meta):
+    score = store.load_score_meta(score_id)
+    if not score or not policy.user_can_edit_score(user, score):
         abort(403)
     try:
         store.remove_aux_file(score_id, file_id)
@@ -1618,8 +1767,8 @@ def score_remove_file(score_id, file_id):
 @login_required
 def score_file_name(score_id, file_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta or not policy.user_can_edit_score(user, meta):
+    score = store.load_score_meta(score_id)
+    if not score or not policy.user_can_edit_score(user, score):
         abort(403)
     data = request.get_json(silent=True) or request.form
     try:
@@ -1663,25 +1812,31 @@ def score_file_split(src_id, file_id):
     folder_id = data.get("folder_id", store.ROOT_FOLDER_ID)
     metadata = score_metadata_from_data(data)
     try:
-        meta = store.split_file_to_new_score(src_id, file_id, lib_id, folder_id, metadata, store.score_owner_id(user))
+        created = store.split_file_to_new_score(
+            src_id, file_id, lib_id, folder_id, metadata, store.score_owner_id(user)
+        )
     except ValueError as e:
         return json_error(str(e))
     source = store.load_score_meta(src_id)
-    return jsonify({"ok": True, "score": meta, "source_score": source})
+    return jsonify({
+        "ok": True,
+        "score": created,
+        "source_score": source.to_dict() if source else None,
+    })
 
 
 @app.post("/scores/<score_id>/delete")
 @login_required
 def score_delete(score_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Not found", 404)
     data = request.get_json(silent=True) or {}
-    library_id = data.get("library_id") or user["id"]
-    if not policy.user_can_remove_score(user, meta, library_id):
+    library_id = data.get("library_id") or user.id
+    if not policy.user_can_remove_score(user, score, library_id):
         abort(403)
-    if policy.user_can_hard_delete_score(user, meta, library_id):
+    if policy.user_can_hard_delete_score(user, score, library_id):
         store.delete_score(score_id)
         return jsonify({"ok": True, "deleted": True})
     store.remove_score_from_library(library_id, score_id)
@@ -1692,12 +1847,12 @@ def score_delete(score_id):
 @login_required
 def serve_file(score_id, stored_name):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         abort(404)
-    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+    if not policy.user_can_view_score(user, score, view_library_id(user)):
         abort(403)
-    if not any(f.get("stored_name") == stored_name for f in meta.get("files", [])):
+    if not any(file_entry.stored_name == stored_name for file_entry in score.files):
         abort(404)
     ext = store.extension_of(stored_name)
     if ext not in store.MAIN_EXTENSIONS | store.AUX_EXTENSIONS:
@@ -1715,12 +1870,12 @@ def serve_file(score_id, stored_name):
 @login_required
 def score_download(score_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         abort(404)
-    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+    if not policy.user_can_view_score(user, score, view_library_id(user)):
         abort(403)
-    main = store.get_main_file(meta)
+    main = store.get_main_file(score)
     if not main or not main.get("stored_name"):
         return json_error("No downloadable file", 404)
     if store.extension_of(main["stored_name"]) not in store.MAIN_EXTENSIONS:
@@ -1734,27 +1889,27 @@ def score_download(score_id):
     return send_file(path, as_attachment=True, download_name=store.file_download_name(main))
 
 
-def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[str]) -> dict:
+def build_viewer_payload(user: User, score: Score, score_id: str, score_ids: list[str]) -> dict:
     files = []
-    for f in meta.get("files", []):
-        display = store.file_display_name(meta, f["id"])
-        if f.get("role") == "main":
+    for file_entry in score.files:
+        display = store.file_display_name(score, file_entry.id)
+        if file_entry.role == "main":
             display = VIEWER_MAIN_FILE_LABEL
         entry = {
-            "id": f["id"],
+            "id": file_entry.id,
             "display_name": display,
-            "media": f.get("media"),
-            "type_label": store.aux_file_type_label(f),
+            "media": file_entry.media,
+            "type_label": store.aux_file_type_label(file_entry.to_dict()),
         }
-        if f.get("media") == "youtube":
-            entry["embed_url"] = store.youtube_embed_url(f.get("url", ""))
-        elif f.get("stored_name"):
+        if file_entry.media == "youtube":
+            entry["embed_url"] = store.youtube_embed_url(file_entry.url)
+        elif file_entry.stored_name:
             entry["serve_url"] = append_scope_query_params(
-                url_for("serve_file", score_id=score_id, stored_name=f["stored_name"])
+                url_for("serve_file", score_id=score_id, stored_name=file_entry.stored_name)
             )
         files.append(entry)
-    main = store.get_main_file(meta)
-    selected_file_id = main["id"] if main else (files[0]["id"] if files else None)
+    main = score.main_file()
+    selected_file_id = main.id if main else (files[0]["id"] if files else None)
     nav = {
         "index": None,
         "total": None,
@@ -1769,20 +1924,20 @@ def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[
         nav["total"] = len(score_ids)
         if idx > 0:
             nav["prev_id"] = score_ids[idx - 1]
-            prev_meta = store.load_score_meta(nav["prev_id"])
-            nav["prev_title"] = prev_meta.get("title") if prev_meta else None
+            prev_score = store.load_score_meta(nav["prev_id"])
+            nav["prev_title"] = prev_score.title if prev_score else None
         if idx < len(score_ids) - 1:
             nav["next_id"] = score_ids[idx + 1]
-            next_meta = store.load_score_meta(nav["next_id"])
-            nav["next_title"] = next_meta.get("title") if next_meta else None
+            next_score = store.load_score_meta(nav["next_id"])
+            nav["next_title"] = next_score.title if next_score else None
     download_url = append_scope_query_params(url_for("score_download", score_id=score_id)) if main else None
     return {
         "score": {
             "id": score_id,
-            "title": meta.get("title"),
-            "composer": meta.get("composer"),
-            "year": meta.get("year", ""),
-            "subtitle": store.score_subtitle_line(meta),
+            "title": score.title,
+            "composer": score.composer,
+            "year": score.year,
+            "subtitle": store.score_subtitle_line(score),
         },
         "files": files,
         "selected_file_id": selected_file_id,
@@ -1796,10 +1951,10 @@ def build_viewer_payload(user: dict, meta: dict, score_id: str, score_ids: list[
 @login_required
 def mint_viewer_ctx(score_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Not found", 404)
-    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+    if not policy.user_can_view_score(user, score, view_library_id(user)):
         abort(403)
     payload = request.get_json(silent=True) or {}
     score_ids = payload.get("score_ids")
@@ -1819,13 +1974,13 @@ def mint_viewer_ctx(score_id):
 @login_required
 def score_viewer_data(score_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Not found", 404)
-    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+    if not policy.user_can_view_score(user, score, view_library_id(user)):
         abort(403)
     score_ids = resolve_score_view_ids(user, score_id)
-    return jsonify(build_viewer_payload(user, meta, score_id, score_ids))
+    return jsonify(build_viewer_payload(user, score, score_id, score_ids))
 
 
 @app.get("/scores/<score_id>/notes")
@@ -1834,12 +1989,12 @@ def score_notes_get(score_id):
     user = current_user()
     if notes_storage_for_user(user) != "server":
         abort(403)
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Not found", 404)
-    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+    if not policy.user_can_view_score(user, score, view_library_id(user)):
         abort(403)
-    return jsonify(store.get_score_notes(user["id"], score_id))
+    return jsonify(store.get_score_notes(user.id, score_id))
 
 
 @app.put("/scores/<score_id>/notes")
@@ -1848,16 +2003,16 @@ def score_notes_put(score_id):
     user = current_user()
     if notes_storage_for_user(user) != "server":
         abort(403)
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         return json_error("Not found", 404)
-    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+    if not policy.user_can_view_score(user, score, view_library_id(user)):
         abort(403)
     payload = request.get_json(silent=True) or {}
     files = payload.get("files")
     if not isinstance(files, dict):
         return json_error("Invalid notes payload", 400)
-    store.set_score_notes(user["id"], score_id, {"files": files})
+    store.set_score_notes(user.id, score_id, {"files": files})
     return jsonify({"ok": True})
 
 
@@ -1865,15 +2020,15 @@ def score_notes_put(score_id):
 @login_required
 def score_view(score_id):
     user = current_user()
-    meta = store.load_score_meta(score_id)
-    if not meta:
+    score = store.load_score_meta(score_id)
+    if not score:
         abort(404)
-    if not policy.user_can_view_score(user, meta, view_library_id(user)):
+    if not policy.user_can_view_score(user, score, view_library_id(user)):
         abort(403)
     nav_query = score_view_nav_params_from_request()
     view_ctx = request.args.get("ctx", "")
     back_url = build_library_back_url(user, nav_query)
-    main = store.get_main_file(meta)
+    main = store.get_main_file(score)
     main_file_url = None
     if main and main.get("stored_name"):
         main_file_url = append_scope_query_params(
@@ -1882,7 +2037,7 @@ def score_view(score_id):
     download_url = append_scope_query_params(url_for("score_download", score_id=score_id)) if main else None
     return render_template(
         "score_view.html",
-        score=meta,
+        score=score,
         view_ctx=view_ctx,
         view_nav=nav_query,
         back_url=back_url,

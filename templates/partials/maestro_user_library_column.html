@@ -1,0 +1,10 @@
+{% if user_library_panel %}
+  {% with library_panel=user_library_panel %}
+    {% include "partials/library_panel.html" %}
+  {% endwith %}
+{% else %}
+<div class="desktop-panel">
+  <div class="desktop-panel-header"><span>User library</span></div>
+  <div class="desktop-panel-empty">Select a user to view their library.</div>
+</div>
+{% endif %}

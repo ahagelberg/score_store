@@ -19,24 +19,17 @@
     {% endwith %}
   </div>
   <div class="maestro-col" id="maestro-user-lib">
-    {% if user_library_panel %}
-      {% with library_panel=user_library_panel %}
-        {% include "partials/library_panel.html" %}
-      {% endwith %}
-    {% else %}
-    <div class="desktop-panel">
-      <div class="desktop-panel-header"><span>User library</span></div>
-      <div class="desktop-panel-empty">Select a user to view their library.</div>
-    </div>
-    {% endif %}
+    {% include "partials/maestro_user_library_column.html" %}
   </div>
 </div>
 {% include "partials/user_dialog.html" %}
 {% include "partials/user_handout_dialog.html" %}
 {% include "partials/maestro_password_dialog.html" %}
 {% include "partials/score_viewer_overlay.html" %}
+{% include "partials/flash_toast.html" %}
 {% endblock %}
 {% block scripts %}
 {% include "partials/library_scripts.html" %}
+<script src="{{ url_for('static', filename='js/page_nav.js') }}"></script>
 <script src="{{ url_for('static', filename='js/maestro.js') }}"></script>
 {% endblock %}
