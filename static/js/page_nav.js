@@ -58,12 +58,13 @@
 
   function buildUrl(base, nav) {
     const url = new URL(base, window.location.origin);
-    const params = new URLSearchParams(url.search);
+    const merged = new URLSearchParams(window.location.search);
+    url.searchParams.forEach((value, key) => merged.set(key, value));
     Object.entries(nav || {}).forEach(([key, value]) => {
-      if (value) params.set(key, value);
-      else params.delete(key);
+      if (value) merged.set(key, value);
+      else merged.delete(key);
     });
-    url.search = params.toString();
+    url.search = merged.toString();
     return url.toString();
   }
 
