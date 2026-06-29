@@ -20,20 +20,9 @@
     <h2 id="maestro-config-title">Library config</h2>
     <form id="maestro-config-form" method="post" action="{{ scoped_url('maestro_config') }}">
       {% include "partials/csrf_field.html" %}
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" name="enable_printing" value="1"{% if maestro_settings.config.enable_printing %} checked{% endif %}>
-          Enable printing
-        </label>
-        <small class="field-hint">Show print buttons on score rows and in the viewer.</small>
-      </div>
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" name="enable_download" value="1"{% if maestro_settings.config.enable_download %} checked{% endif %}>
-          Enable download
-        </label>
-        <small class="field-hint">Show download buttons on score rows and in the viewer.</small>
-      </div>
+      {% with maestro_cfg=maestro_settings.config, config_field_prefix="maestro-settings-" %}
+        {% include "partials/maestro_library_config_fields.html" %}
+      {% endwith %}
       <div class="dialog-actions">
         <button type="button" class="btn" data-maestro-settings-close>Cancel</button>
         <button type="submit" class="btn btn-primary">Save</button>
@@ -47,31 +36,9 @@
     <h2 id="maestro-appearance-title">Site appearance</h2>
     <form id="maestro-appearance-form" method="post" action="{{ scoped_url('maestro_appearance') }}" enctype="multipart/form-data">
       {% include "partials/csrf_field.html" %}
-      <div class="form-group">
-        <label for="maestro-settings-site-title">Site title</label>
-        <input class="form-control" type="text" id="maestro-settings-site-title" name="site_title" value="{{ maestro_settings.config.site_title }}" required>
-        <label class="checkbox-label">
-          <input type="checkbox" name="show_site_title" value="1"{% if maestro_settings.config.show_site_title %} checked{% endif %}>
-          Show site title in header next to logotype
-        </label>
-        <small class="field-hint">Uncheck when the logotype already includes the site name.</small>
-      </div>
-      <div class="form-group">
-        <label for="maestro-settings-logotype">Logotype</label>
-        <input class="form-control" type="file" id="maestro-settings-logotype" name="logotype" accept="image/*">
-        {% if maestro_settings.config.logotype %}
-        <label class="checkbox-label"><input type="checkbox" name="remove_logotype" value="1"> Remove logotype</label>
-        {% endif %}
-      </div>
-      <div class="form-group">
-        <label for="maestro-settings-theme-css">Theme CSS</label>
-        <textarea class="form-control theme-css-editor" id="maestro-settings-theme-css" name="theme_css_text" rows="8">{{ maestro_settings.theme_css }}</textarea>
-        <small class="field-hint">Override CSS variables such as --color-primary, --color-bg, --color-accent-bg.</small>
-      </div>
-      <div class="form-group">
-        <label for="maestro-settings-theme-file">Or upload theme.css</label>
-        <input class="form-control" type="file" id="maestro-settings-theme-file" name="theme_css" accept=".css,text/css">
-      </div>
+      {% with appearance_field_prefix="maestro-settings-", appearance_site_title=maestro_settings.config.site_title, appearance_site_title_required=true, appearance_show_site_title=maestro_settings.config.show_site_title, appearance_logotype=maestro_settings.config.logotype, appearance_theme_css=maestro_settings.theme_css, appearance_theme_mode="settings" %}
+        {% include "partials/maestro_appearance_fields.html" %}
+      {% endwith %}
       <div class="dialog-actions">
         <button type="button" class="btn" data-maestro-settings-close>Cancel</button>
         <button type="submit" class="btn btn-primary">Save</button>

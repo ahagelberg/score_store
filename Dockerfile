@@ -15,8 +15,8 @@ COPY templates/ templates/
 COPY static/ static/
 
 ENV DATA_DIR=/app/data
-ENV PORT=5000
+ENV PORT=80
 
-EXPOSE 5000
+EXPOSE 80
 
 CMD ["python", "app.py"]

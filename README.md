@@ -14,7 +14,7 @@ export SECRET_KEY=change-me
 python app.py --dev
 ```
 
-Open http://localhost:5000 — on first run the **setup wizard** creates the platform admin account and storage path.
+Open http://localhost — on first run the **setup wizard** creates the platform admin account and storage path.
 
 **Production** (default): `python app.py` starts gunicorn. **Development**: add `--dev` or set `FLASK_DEBUG=1`.
 
@@ -42,7 +42,7 @@ Server authorization rules live in `policy.py`. Routes should call those helpers
 | `BOOTSTRAP_ADMIN_PASSWORD` | Optional: paired with `BOOTSTRAP_ADMIN_USER` |
 | `USE_HTTPS=1` | Set `SESSION_COOKIE_SECURE` for HTTPS deployments |
 | `DATA_DIR` | Default storage path before wizard runs (default: `./data`) |
-| `PORT` | HTTP port (default: 5000) |
+| `PORT` | HTTP port (default: 80) |
 | `GUNICORN_WORKERS` | Gunicorn worker count when not in dev mode (default: 4) |
 | `FLASK_DEBUG=1` | Dev mode: Flask built-in server with reload and debugger |
 
@@ -63,7 +63,7 @@ Run Flask behind **Caddy** or **nginx** terminating TLS. Set `USE_HTTPS=1`. Brow
 ```
 scorestore.local {
   tls cert.pem key.pem
-  reverse_proxy localhost:5000
+  reverse_proxy localhost:80
 }
 ```
 
@@ -71,7 +71,7 @@ scorestore.local {
 
 ```bash
 docker build -t score-store .
-docker run -p 5000:5000 -v scorestore-data:/app/data \
+docker run -p 80:80 -v scorestore-data:/app/data \
   -e SECRET_KEY=... \
   -e BOOTSTRAP_ADMIN_USER=admin \
   -e BOOTSTRAP_ADMIN_PASSWORD=... \

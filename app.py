@@ -34,6 +34,7 @@ import system_info
 from models.score import Score
 from models.user import User
 import user_handout
+from services import maestro_settings as maestro_settings_service
 
 APP_TITLE = constants.APP_NAME
 UPLOAD_SCORE_LABEL = "Upload score"
@@ -58,7 +59,7 @@ NAV_PRESERVE_BY_ENDPOINT = {
     "maestro": ("q", "tag", "user", "lib"),
     "library": ("q", "tag"),
 }
-DEFAULT_HTTP_PORT = 5000
+DEFAULT_HTTP_PORT = 80
 DEFAULT_GUNICORN_WORKERS = 4
 GUNICORN_BIND_HOST = "0.0.0.0"
 DEV_MODE_ENV = "FLASK_DEBUG"
@@ -1355,33 +1356,14 @@ def admin_maestro_new():
     display_name = request.form.get("display_name", "").strip()
     username = request.form.get("username", "").strip().lower()
     password = request.form.get("password", "")
-    site_title = request.form.get("site_title", "").strip()
     if not display_name or not username or not password:
         flash("Display name, username, and password required", "error")
         return redirect(url_for("admin"))
     try:
         user = store.create_maestro_account(display_name, username, password, password_secret())
-        show_site_title = store.form_show_site_title_checked(request.form.get("show_site_title"))
-        store.save_maestro_config(username, {
-            "site_title": site_title or display_name,
-            "logotype": "",
-            "show_site_title": show_site_title,
-        })
-        theme_upload = request.files.get("theme_css")
-        if theme_upload and theme_upload.filename:
-            theme_upload.save(store.maestro_theme_path(username))
-        logotype_upload = request.files.get("logotype")
-        if logotype_upload and logotype_upload.filename:
-            ext = store.extension_of(logotype_upload.filename)
-            if ext in store.LOGOTYPE_EXTENSIONS:
-                dest = store.maestro_data_dir(username) / store.MAESTRO_ASSETS_DIRNAME / f"{store.LOGOTYPE_STORED_BASENAME}.{ext}"
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                logotype_upload.save(dest)
-                rel = f"{store.MAESTRO_ASSETS_DIRNAME}/{store.LOGOTYPE_STORED_BASENAME}.{ext}"
-                cfg = store.load_maestro_config(username)
-                cfg["site_title"] = site_title or display_name
-                cfg["logotype"] = rel
-                store.save_maestro_config(username, cfg)
+        maestro_settings_service.apply_appearance(
+            user.username, display_name, request.form, request.files
+        )
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("admin"))
@@ -1399,7 +1381,6 @@ def admin_maestro_edit(maestro_id):
     display_name = request.form.get("display_name", "").strip()
     username = request.form.get("username", "").strip().lower()
     password = request.form.get("password", "")
-    site_title = request.form.get("site_title", "").strip()
     if not display_name or not username:
         flash("Display name and username required", "error")
         return redirect(url_for("admin", maestro=old_username))
@@ -1418,27 +1399,13 @@ def admin_maestro_edit(maestro_id):
     if password:
         store.set_user_password(target, password, password_secret())
     store.upsert_user(target)
-    cfg = store.load_maestro_config(username)
-    if site_title:
-        cfg["site_title"] = site_title
-    cfg["show_site_title"] = store.form_show_site_title_checked(request.form.get("show_site_title"))
-    theme_text = request.form.get("theme_css_text", "")
-    if theme_text.strip():
-        store.maestro_theme_path(username).write_text(theme_text, encoding="utf-8")
-    theme_upload = request.files.get("theme_css")
-    if theme_upload and theme_upload.filename:
-        theme_upload.save(store.maestro_theme_path(username))
-    logotype_upload = request.files.get("logotype")
-    if logotype_upload and logotype_upload.filename:
-        ext = store.extension_of(logotype_upload.filename)
-        if ext in store.LOGOTYPE_EXTENSIONS:
-            dest = store.maestro_data_dir(username) / store.MAESTRO_ASSETS_DIRNAME / f"{store.LOGOTYPE_STORED_BASENAME}.{ext}"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            logotype_upload.save(dest)
-            cfg["logotype"] = f"{store.MAESTRO_ASSETS_DIRNAME}/{store.LOGOTYPE_STORED_BASENAME}.{ext}"
-    if request.form.get("remove_logotype") == "1":
-        cfg["logotype"] = ""
-    store.save_maestro_config(username, cfg)
+    maestro_settings_service.apply_appearance(
+        username,
+        target.display_name,
+        request.form,
+        request.files,
+        preserve_site_title_if_empty=True,
+    )
     flash("Maestro updated", "success")
     return redirect(url_for("admin", maestro=username))
 
@@ -1482,60 +1449,51 @@ def admin_change_password():
     return redirect(safe_redirect_target(request.referrer, url_for("admin")))
 
 
-@app.route("/maestro/config", methods=["GET", "POST"])
+def maestro_home_redirect():
+    return redirect(append_scope_query_params(url_for("maestro")))
+
+
+@app.get("/maestro/config")
+@maestro_scope_required
+def maestro_config_get():
+    return maestro_home_redirect()
+
+
+@app.post("/maestro/config")
 @maestro_scope_required
 def maestro_config():
     user = current_user()
     username = user.username
-    if request.method == "GET":
-        return redirect(append_scope_query_params(url_for("maestro")))
     if not policy.user_can_edit_maestro_config(user, username):
         abort(403)
-    cfg = store.load_maestro_config(username)
-    cfg["enable_printing"] = store.form_show_site_title_checked(request.form.get("enable_printing"))
-    cfg["enable_download"] = store.form_show_site_title_checked(request.form.get("enable_download"))
-    store.save_maestro_config(username, cfg)
+    cfg = maestro_settings_service.apply_library_config(username, request.form)
     if ajax_request():
         features = store.maestro_library_features(cfg)
         return jsonify({"ok": True, "message": "Config saved", "features": features})
     flash("Config saved", "success")
-    return redirect(append_scope_query_params(url_for("maestro")))
+    return maestro_home_redirect()
 
 
-@app.route("/maestro/appearance", methods=["GET", "POST"])
+@app.get("/maestro/appearance")
+@maestro_scope_required
+def maestro_appearance_get():
+    return maestro_home_redirect()
+
+
+@app.post("/maestro/appearance")
 @maestro_scope_required
 def maestro_appearance():
     user = current_user()
     username = user.username
-    if request.method == "GET":
-        return redirect(append_scope_query_params(url_for("maestro")))
     if not policy.user_can_edit_maestro_config(user, username):
         abort(403)
-    site_title = request.form.get("site_title", "").strip()
-    cfg = store.load_maestro_config(username)
-    cfg["site_title"] = site_title or user.display_name
-    cfg["show_site_title"] = store.form_show_site_title_checked(request.form.get("show_site_title"))
-    theme_text = request.form.get("theme_css_text", "")
-    if theme_text.strip():
-        store.maestro_theme_path(username).write_text(theme_text, encoding="utf-8")
-    theme_upload = request.files.get("theme_css")
-    if theme_upload and theme_upload.filename:
-        theme_upload.save(store.maestro_theme_path(username))
-    logotype_upload = request.files.get("logotype")
-    if logotype_upload and logotype_upload.filename:
-        ext = store.extension_of(logotype_upload.filename)
-        if ext in store.LOGOTYPE_EXTENSIONS:
-            dest = store.maestro_data_dir(username) / store.MAESTRO_ASSETS_DIRNAME / f"{store.LOGOTYPE_STORED_BASENAME}.{ext}"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            logotype_upload.save(dest)
-            cfg["logotype"] = f"{store.MAESTRO_ASSETS_DIRNAME}/{store.LOGOTYPE_STORED_BASENAME}.{ext}"
-    if request.form.get("remove_logotype") == "1":
-        cfg["logotype"] = ""
-    store.save_maestro_config(username, cfg)
+    maestro_settings_service.apply_appearance(
+        username, user.display_name, request.form, request.files
+    )
     if ajax_request():
         return jsonify({"ok": True, "message": "Appearance saved"})
     flash("Appearance saved", "success")
-    return redirect(append_scope_query_params(url_for("maestro")))
+    return maestro_home_redirect()
 
 
 @app.get("/maestro-assets/<maestro_username>/theme.css")

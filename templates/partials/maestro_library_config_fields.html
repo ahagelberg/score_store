@@ -1,0 +1,15 @@
+{% set fp = config_field_prefix|default("") %}
+<div class="form-group">
+  <label class="checkbox-label">
+    <input type="checkbox" name="enable_printing" id="{{ fp }}enable-printing" value="1"{% if maestro_cfg.enable_printing %} checked{% endif %}>
+    Enable printing
+  </label>
+  <small class="field-hint">Show print buttons on score rows and in the viewer.</small>
+</div>
+<div class="form-group">
+  <label class="checkbox-label">
+    <input type="checkbox" name="enable_download" id="{{ fp }}enable-download" value="1"{% if maestro_cfg.enable_download %} checked{% endif %}>
+    Enable download
+  </label>
+  <small class="field-hint">Show download buttons on score rows and in the viewer.</small>
+</div>
