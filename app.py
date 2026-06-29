@@ -35,6 +35,8 @@ from models.score import Score
 from models.user import User
 import user_handout
 from services import maestro_settings as maestro_settings_service
+from services import maestro_backup as maestro_backup_service
+import paths
 
 APP_TITLE = constants.APP_NAME
 UPLOAD_SCORE_LABEL = "Upload score"
@@ -887,14 +889,18 @@ def _admin_ajax_response(
     query: str,
     active_tag: str | None,
     selected_maestro: str | None,
+    actor: User,
 ):
     params = _admin_url_params(selected_maestro, query, active_tag)
+    backup_ctx = admin_maestro_backup_context(actor, selected_maestro)
     return jsonify({
         "url": append_scope_query_params(url_for("admin", **params)),
         "library_html": render_template(
             "partials/admin_library_column.html",
             library_panel=library_panel,
             maestro_stats=maestro_stats,
+            selected_maestro=selected_maestro,
+            **backup_ctx,
         ),
         "user_tree_html": render_template(
             "partials/user_tree_panel.html",
@@ -1043,6 +1049,7 @@ def inject_globals():
         "preview_mode": preview_mode,
         "preview_user": preview_user,
         "notes_storage": notes_storage_for_user(user),
+        "constants": constants,
     }
 
 
@@ -1172,6 +1179,7 @@ def admin():
             query,
             tag,
             selected_maestro,
+            user,
         )
     return render_template(
         "admin.html",
@@ -1182,6 +1190,7 @@ def admin():
         query=query,
         active_tag=tag,
         selected_maestro=selected_maestro,
+        **admin_maestro_backup_context(user, selected_maestro),
     )
 
 
@@ -1408,6 +1417,116 @@ def admin_maestro_edit(maestro_id):
     )
     flash("Maestro updated", "success")
     return redirect(url_for("admin", maestro=username))
+
+
+def admin_maestro_backup_context(actor: User, selected_maestro: str | None) -> dict:
+    if not selected_maestro or not policy.admin_can_view_maestro(actor, selected_maestro):
+        return {
+            "backup_enabled": False,
+            "backup_retention": constants.DEFAULT_BACKUP_RETENTION_COUNT,
+            "maestro_backups": [],
+        }
+    settings = maestro_backup_service.backup_settings(selected_maestro)
+    return {
+        "backup_enabled": settings["enabled"],
+        "backup_retention": settings["retention"],
+        "maestro_backups": maestro_backup_service.list_maestro_backups(selected_maestro),
+    }
+
+
+@app.post("/admin/maestros/<maestro_id>/backup-config")
+@role_required(store.ADMIN_ROLE)
+def admin_maestro_backup_config(maestro_id):
+    actor = session_user()
+    target = store.get_user_by_username(maestro_id)
+    if not target or not target.is_maestro() or not policy.admin_can_view_maestro(actor, target.username):
+        abort(404)
+    try:
+        settings = maestro_backup_service.apply_backup_config(target.username, request.form)
+    except ValueError as e:
+        if ajax_request():
+            return ajax_error(str(e))
+        flash(str(e), "error")
+        return redirect(url_for("admin", maestro=target.username))
+    if ajax_request():
+        return jsonify({
+            "ok": True,
+            "message": "Backup settings saved",
+            "backup_enabled": settings["enabled"],
+            "backup_retention": settings["retention"],
+        })
+    flash("Backup settings saved", "success")
+    return redirect(url_for("admin", maestro=target.username))
+
+
+@app.post("/admin/maestros/<maestro_id>/backup")
+@role_required(store.ADMIN_ROLE)
+def admin_maestro_backup(maestro_id):
+    actor = session_user()
+    target = store.get_user_by_username(maestro_id)
+    if not target or not target.is_maestro() or not policy.admin_can_view_maestro(actor, target.username):
+        abort(404)
+    try:
+        result = maestro_backup_service.create_maestro_backup(target.username)
+    except (ValueError, OSError) as e:
+        if ajax_request():
+            return ajax_error(str(e))
+        flash(str(e), "error")
+        return redirect(url_for("admin", maestro=target.username))
+    if ajax_request():
+        settings = maestro_backup_service.backup_settings(target.username)
+        return jsonify({
+            "ok": True,
+            "message": f"Backup created ({result['filename']})",
+            "backup": result,
+            "backups": maestro_backup_service.list_maestro_backups(target.username),
+            "backup_enabled": settings["enabled"],
+            "backup_retention": settings["retention"],
+        })
+    flash(f"Backup created ({result['filename']})", "success")
+    return redirect(url_for("admin", maestro=target.username))
+
+
+@app.get("/admin/maestros/<maestro_username>/backups/<filename>")
+@role_required(store.ADMIN_ROLE)
+def admin_maestro_backup_download(maestro_username, filename):
+    actor = session_user()
+    uname = maestro_username.strip().lower()
+    if not policy.admin_can_view_maestro(actor, uname):
+        abort(403)
+    try:
+        path = maestro_backup_service.resolve_backup_file(uname, filename)
+    except (ValueError, FileNotFoundError):
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=path.name)
+
+
+@app.delete("/admin/maestros/<maestro_username>/backups/<filename>")
+@role_required(store.ADMIN_ROLE)
+def admin_maestro_backup_delete(maestro_username, filename):
+    actor = session_user()
+    uname = maestro_username.strip().lower()
+    if not policy.admin_can_view_maestro(actor, uname):
+        abort(403)
+    try:
+        deleted = maestro_backup_service.delete_maestro_backup(uname, filename)
+    except ValueError:
+        abort(400)
+    except FileNotFoundError:
+        abort(404)
+    except OSError as e:
+        if ajax_request():
+            return ajax_error(str(e))
+        flash(str(e), "error")
+        return redirect(url_for("admin", maestro=uname))
+    if ajax_request():
+        return jsonify({
+            "ok": True,
+            "message": f"Backup deleted ({deleted})",
+            "backups": maestro_backup_service.list_maestro_backups(uname),
+        })
+    flash(f"Backup deleted ({deleted})", "success")
+    return redirect(url_for("admin", maestro=uname))
 
 
 @app.delete("/admin/maestros/<maestro_id>")

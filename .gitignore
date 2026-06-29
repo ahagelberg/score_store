@@ -1,4 +1,5 @@
 data/
+backups/
 instance/
 __pycache__/
 *.py[cod]

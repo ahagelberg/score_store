@@ -1,0 +1,42 @@
+{% if selected_maestro %}
+<div class="maestro-backup-panel">
+  <div class="maestro-backup-panel-header">
+    <h3 class="maestro-backup-panel-title">Backups</h3>
+    <button type="button" class="btn btn-sm btn-primary" id="admin-maestro-backup-btn"
+            data-maestro-id="{{ selected_maestro }}"
+            data-backup-enabled="{{ '1' if backup_enabled else '0' }}"
+            {% if not backup_enabled %}disabled{% endif %}>Create backup</button>
+  </div>
+  <form class="maestro-backup-config-form" id="admin-backup-config-form" method="post"
+        action="{{ url_for('admin_maestro_backup_config', maestro_id=selected_maestro) }}">
+    {% include "partials/csrf_field.html" %}
+    <label class="maestro-backup-enable">
+      <input type="checkbox" name="backup_enabled" id="admin-backup-enabled" value="1"{% if backup_enabled %} checked{% endif %}>
+      Enable backups
+    </label>
+    <label class="maestro-backup-config-label" for="admin-backup-retention">Backups to keep</label>
+    <input class="form-control maestro-backup-config-input" type="number" id="admin-backup-retention"
+           name="backup_retention_count" value="{{ backup_retention }}"
+           min="{{ constants.BACKUP_RETENTION_MIN }}" max="{{ constants.BACKUP_RETENTION_MAX }}" required>
+    <button type="submit" class="btn btn-sm">Save</button>
+  </form>
+  {% if maestro_backups %}
+  <ul class="maestro-backup-list" id="admin-maestro-backup-list">
+    {% for backup in maestro_backups %}
+    <li class="maestro-backup-item">
+      <a class="maestro-backup-link" href="{{ url_for('admin_maestro_backup_download', maestro_username=selected_maestro, filename=backup.filename) }}">{{ backup.filename }}</a>
+      <div class="maestro-backup-actions">
+        <span class="maestro-backup-meta">{{ backup.size_label }}</span>
+        <button type="button" class="btn-icon btn-icon-sm maestro-backup-delete-btn"
+                data-maestro-id="{{ selected_maestro }}"
+                data-filename="{{ backup.filename }}"
+                title="Delete backup" aria-label="Delete backup">×</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="maestro-backup-empty" id="admin-maestro-backup-empty">No backups yet.</p>
+  {% endif %}
+</div>
+{% endif %}

@@ -56,7 +56,31 @@ def reload_data_dir_from_instance() -> Path:
 def save_instance_config(data_dir: Path) -> None:
     c.INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     resolved = data_dir.expanduser().resolve()
-    JsonStore.write_dict(c.INSTANCE_CONFIG_PATH, {"data_dir": str(resolved)})
+    cfg = _read_instance_config()
+    cfg["data_dir"] = str(resolved)
+    JsonStore.write_dict(c.INSTANCE_CONFIG_PATH, cfg)
+
+
+def read_instance_config() -> dict:
+    return _read_instance_config()
+
+
+def update_instance_config(updates: dict) -> None:
+    c.INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+    cfg = _read_instance_config()
+    cfg.update(updates)
+    JsonStore.write_dict(c.INSTANCE_CONFIG_PATH, cfg)
+
+
+def backups_root() -> Path:
+    return DATA_DIR.parent / c.BACKUPS_DIRNAME
+
+
+def maestro_backups_dir(maestro_username: str) -> Path:
+    uname = maestro_username.strip().lower()
+    if not uname:
+        raise ValueError("Maestro username is required")
+    return backups_root() / uname
 
 
 def resolve_data_dir(path_str: str) -> Path:

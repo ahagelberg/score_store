@@ -18,12 +18,20 @@ class MaestroConfig(JsonModel):
         show_site_title: bool = c.DEFAULT_SHOW_SITE_TITLE,
         enable_printing: bool = c.DEFAULT_ENABLE_PRINTING,
         enable_download: bool = c.DEFAULT_ENABLE_DOWNLOAD,
+        backup_enabled: bool = c.DEFAULT_BACKUP_ENABLED,
+        backup_retention_count: int = c.DEFAULT_BACKUP_RETENTION_COUNT,
     ):
         self.site_title = site_title
         self.logotype = logotype
         self.show_site_title = show_site_title
         self.enable_printing = enable_printing
         self.enable_download = enable_download
+        self.backup_enabled = backup_enabled
+        self.backup_retention_count = self._clamp_backup_retention(backup_retention_count)
+
+    @staticmethod
+    def _clamp_backup_retention(count: int) -> int:
+        return max(c.BACKUP_RETENTION_MIN, min(count, c.BACKUP_RETENTION_MAX))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -32,16 +40,25 @@ class MaestroConfig(JsonModel):
             "show_site_title": self.show_site_title,
             "enable_printing": self.enable_printing,
             "enable_download": self.enable_download,
+            c.MAESTRO_KEY_BACKUP_ENABLED: self.backup_enabled,
+            c.MAESTRO_KEY_BACKUP_RETENTION: self.backup_retention_count,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MaestroConfig:
+        raw_retention = data.get(c.MAESTRO_KEY_BACKUP_RETENTION, c.DEFAULT_BACKUP_RETENTION_COUNT)
+        try:
+            retention = int(raw_retention)
+        except (TypeError, ValueError):
+            retention = c.DEFAULT_BACKUP_RETENTION_COUNT
         return cls(
             data.get("site_title", ""),
             data.get("logotype", ""),
             bool(data.get("show_site_title", c.DEFAULT_SHOW_SITE_TITLE)),
             bool(data.get("enable_printing", c.DEFAULT_ENABLE_PRINTING)),
             bool(data.get("enable_download", c.DEFAULT_ENABLE_DOWNLOAD)),
+            bool(data.get(c.MAESTRO_KEY_BACKUP_ENABLED, c.DEFAULT_BACKUP_ENABLED)),
+            retention,
         )
 
     def header_show_title(self, has_logotype: bool) -> bool:
@@ -53,4 +70,10 @@ class MaestroConfig(JsonModel):
         return {
             "enable_printing": self.enable_printing,
             "enable_download": self.enable_download,
+        }
+
+    def backup_settings(self) -> dict[str, bool | int]:
+        return {
+            "enabled": self.backup_enabled,
+            "retention": self.backup_retention_count,
         }
