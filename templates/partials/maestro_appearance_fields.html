@@ -1,44 +1,59 @@
+{% from "macros/settings_ui.html" import panel, options_open, options_close, option_checkbox, option_field, option_file %}
 {% set fp = appearance_field_prefix %}
-<div class="form-group">
-  <label for="{{ fp }}site-title">Site title</label>
-  <input class="form-control" type="text" id="{{ fp }}site-title" name="site_title" value="{{ appearance_site_title }}"{% if appearance_site_title_required %} required{% endif %}>
-  <label class="checkbox-label">
-    <input type="checkbox" name="show_site_title" id="{{ fp }}show-site-title" value="1"{% if appearance_show_site_title %} checked{% endif %}>
-    Show site title in header next to logotype
-  </label>
-  <small class="field-hint">Uncheck when the logotype already includes the site name.</small>
-</div>
-<div class="form-group">
-  <label for="{{ fp }}logotype">Logotype</label>
+{% call panel('Site') %}
+  {{ options_open() }}
+  {{ option_field('site_title', fp ~ 'site-title', 'Site title', appearance_site_title, 'Shown in the header when enabled.', appearance_site_title_required) }}
+  {{ option_checkbox('show_site_title', fp ~ 'show-site-title', 'Show site title in header', 'Uncheck when the logotype already includes the site name.', appearance_show_site_title) }}
   {% if appearance_logotype_preview %}
-  <div class="maestro-dialog-logotype-preview-wrap hidden" id="maestro-logotype-preview-wrap">
-    <img class="maestro-dialog-logotype-img" id="maestro-logotype-preview" src="" alt="Current logotype">
-  </div>
+  <li class="settings-option settings-option-stack">
+    <div class="settings-option-text">
+      <span class="settings-option-name">Current logotype</span>
+    </div>
+    <div class="settings-option-full">
+      <div class="settings-logotype-preview-wrap hidden" id="maestro-logotype-preview-wrap">
+        <img class="settings-logotype-preview-img" id="maestro-logotype-preview" src="" alt="Current logotype">
+      </div>
+    </div>
+  </li>
   {% endif %}
-  <input class="form-control" type="file" id="{{ fp }}logotype" name="logotype" accept="image/*">
+  {{ option_file('logotype', fp ~ 'logotype', 'Logotype', 'image/*') }}
   {% if appearance_logotype %}
-  <label class="checkbox-label{% if appearance_logotype_remove_hidden %} hidden{% endif %}"{% if appearance_logotype_remove_wrap_id %} id="{{ appearance_logotype_remove_wrap_id }}"{% endif %}>
-    <input type="checkbox" name="remove_logotype" id="{{ fp }}remove-logotype" value="1"> Remove logotype
-  </label>
+  <li class="settings-option{% if appearance_logotype_remove_hidden %} hidden{% endif %}"{% if appearance_logotype_remove_wrap_id %} id="{{ appearance_logotype_remove_wrap_id }}"{% endif %}>
+    <div class="settings-option-text">
+      <label class="settings-option-name" for="{{ fp }}remove-logotype">Remove logotype</label>
+      <span class="settings-option-hint">Delete the current logotype image.</span>
+    </div>
+    <div class="settings-option-control">
+      <input type="checkbox" name="remove_logotype" id="{{ fp }}remove-logotype" value="1">
+    </div>
+  </li>
   {% endif %}
-</div>
-{% if appearance_theme_mode == "admin" %}
-<div class="form-group">
-  <label for="{{ fp }}theme-css">Theme CSS file</label>
-  <input class="form-control" type="file" id="{{ fp }}theme-css" name="theme_css" accept=".css,text/css">
-</div>
-<div class="form-group{% if appearance_theme_text_hidden %} hidden{% endif %}"{% if appearance_theme_text_group_id %} id="{{ appearance_theme_text_group_id }}"{% endif %}>
-  <label for="{{ fp }}theme-css-text">Theme CSS</label>
-  <textarea class="form-control theme-css-editor" id="{{ fp }}theme-css-text" name="theme_css_text" rows="8">{{ appearance_theme_css }}</textarea>
-</div>
-{% else %}
-<div class="form-group">
-  <label for="{{ fp }}theme-css-text">Theme CSS</label>
-  <textarea class="form-control theme-css-editor" id="{{ fp }}theme-css-text" name="theme_css_text" rows="8">{{ appearance_theme_css }}</textarea>
-  <small class="field-hint">Override CSS variables such as --color-primary, --color-bg, --color-accent-bg.</small>
-</div>
-<div class="form-group">
-  <label for="{{ fp }}theme-file">Or upload theme.css</label>
-  <input class="form-control" type="file" id="{{ fp }}theme-file" name="theme_css" accept=".css,text/css">
-</div>
-{% endif %}
+  {{ options_close() }}
+{% endcall %}
+{% call panel('Theme') %}
+  {{ options_open() }}
+  {% if appearance_theme_mode == 'admin' %}
+  {{ option_file('theme_css', fp ~ 'theme-css', 'Theme CSS file', '.css,text/css') }}
+  <li class="settings-option settings-option-stack{% if appearance_theme_text_hidden %} hidden{% endif %}"{% if appearance_theme_text_group_id %} id="{{ appearance_theme_text_group_id }}"{% endif %}>
+    <div class="settings-option-text">
+      <label class="settings-option-name" for="{{ fp }}theme-css-text">Theme CSS</label>
+      <span class="settings-option-hint">Override CSS variables such as --color-primary, --color-bg, --color-accent-bg.</span>
+    </div>
+    <div class="settings-option-full">
+      <textarea class="form-control theme-css-editor" id="{{ fp }}theme-css-text" name="theme_css_text" rows="8">{{ appearance_theme_css }}</textarea>
+    </div>
+  </li>
+  {% else %}
+  <li class="settings-option settings-option-stack">
+    <div class="settings-option-text">
+      <label class="settings-option-name" for="{{ fp }}theme-css-text">Theme CSS</label>
+      <span class="settings-option-hint">Override CSS variables such as --color-primary, --color-bg, --color-accent-bg.</span>
+    </div>
+    <div class="settings-option-full">
+      <textarea class="form-control theme-css-editor" id="{{ fp }}theme-css-text" name="theme_css_text" rows="8">{{ appearance_theme_css }}</textarea>
+    </div>
+  </li>
+  {{ option_file('theme_css', fp ~ 'theme-file', 'Or upload theme.css', '.css,text/css') }}
+  {% endif %}
+  {{ options_close() }}
+{% endcall %}

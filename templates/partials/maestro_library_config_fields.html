@@ -1,15 +1,6 @@
+{% from "macros/settings_ui.html" import options_open, options_close, option_checkbox %}
 {% set fp = config_field_prefix|default("") %}
-<div class="form-group">
-  <label class="checkbox-label">
-    <input type="checkbox" name="enable_printing" id="{{ fp }}enable-printing" value="1"{% if maestro_cfg.enable_printing %} checked{% endif %}>
-    Enable printing
-  </label>
-  <small class="field-hint">Show print buttons on score rows and in the viewer.</small>
-</div>
-<div class="form-group">
-  <label class="checkbox-label">
-    <input type="checkbox" name="enable_download" id="{{ fp }}enable-download" value="1"{% if maestro_cfg.enable_download %} checked{% endif %}>
-    Enable download
-  </label>
-  <small class="field-hint">Show download buttons on score rows and in the viewer.</small>
-</div>
+{{ options_open() }}
+{{ option_checkbox('enable_printing', fp ~ 'enable-printing', 'Enable printing', 'Show print buttons on score rows and in the viewer.', maestro_cfg.enable_printing) }}
+{{ option_checkbox('enable_download', fp ~ 'enable-download', 'Enable download', 'Show download buttons on score rows and in the viewer.', maestro_cfg.enable_download) }}
+{{ options_close() }}

@@ -1,0 +1,96 @@
+{% macro overlay_start(overlay_id, labelledby, title, close_attr='data-maestro-settings-close') %}
+<div class="dialog-overlay settings-dialog-overlay hidden" id="{{ overlay_id }}" aria-hidden="true">
+  <div class="settings-dialog" role="dialog" aria-labelledby="{{ labelledby }}">
+    <div class="settings-dialog-header">
+      <h2 class="settings-dialog-title" id="{{ labelledby }}">{{ title }}</h2>
+      <button type="button" class="btn-icon btn-icon-sm settings-dialog-close" {{ close_attr }} aria-label="Close">
+        {% include "partials/icon_close.svg.html" %}
+      </button>
+    </div>
+{% endmacro %}
+
+{% macro overlay_end() %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro form_start(form_id, action, enctype='') %}
+<form id="{{ form_id }}" class="settings-dialog-form" method="post" action="{{ action }}"{% if enctype %} enctype="{{ enctype }}"{% endif %}>
+  {% include "partials/csrf_field.html" %}
+  <div class="settings-dialog-body">
+{% endmacro %}
+
+{% macro form_end(cancel_attr='data-maestro-settings-close') %}
+  </div>
+  <div class="settings-dialog-footer">
+    {{ caller() }}
+    <button type="button" class="btn" {{ cancel_attr }}>Cancel</button>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </div>
+</form>
+{% endmacro %}
+
+{% macro panel(heading) %}
+<div class="settings-panel">
+  <h3 class="settings-panel-heading">{{ heading }}</h3>
+  <div class="settings-panel-content">
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro options_open() %}
+<ul class="settings-option-list">
+{% endmacro %}
+
+{% macro options_close() %}
+</ul>
+{% endmacro %}
+
+{% macro option_checkbox(name, id, label, hint='', checked=false) %}
+<li class="settings-option">
+  <div class="settings-option-text">
+    <label class="settings-option-name" for="{{ id }}">{{ label }}</label>
+    {% if hint %}<span class="settings-option-hint">{{ hint }}</span>{% endif %}
+  </div>
+  <div class="settings-option-control">
+    <input type="checkbox" name="{{ name }}" id="{{ id }}" value="1"{% if checked %} checked{% endif %}>
+  </div>
+</li>
+{% endmacro %}
+
+{% macro option_field(name, id, label, value='', hint='', required=false, input_type='text', autocomplete='', minlength='') %}
+<li class="settings-option settings-option-field">
+  <div class="settings-option-text">
+    <label class="settings-option-name" for="{{ id }}">{{ label }}</label>
+    {% if hint %}<span class="settings-option-hint">{{ hint }}</span>{% endif %}
+  </div>
+  <div class="settings-option-control">
+    <input class="form-control settings-option-input" type="{{ input_type }}" name="{{ name }}" id="{{ id }}" value="{{ value }}"{% if required %} required{% endif %}{% if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}{% if minlength %} minlength="{{ minlength }}"{% endif %}>
+  </div>
+</li>
+{% endmacro %}
+
+{% macro option_file(name, id, label, accept='', hint='') %}
+<li class="settings-option settings-option-field">
+  <div class="settings-option-text">
+    <label class="settings-option-name" for="{{ id }}">{{ label }}</label>
+    {% if hint %}<span class="settings-option-hint">{{ hint }}</span>{% endif %}
+  </div>
+  <div class="settings-option-control">
+    <input class="form-control settings-option-input" type="file" name="{{ name }}" id="{{ id }}"{% if accept %} accept="{{ accept }}"{% endif %}>
+  </div>
+</li>
+{% endmacro %}
+
+{% macro option_stack(name, id, label, hint='') %}
+<li class="settings-option settings-option-stack">
+  <div class="settings-option-text">
+    <label class="settings-option-name" for="{{ id }}">{{ label }}</label>
+    {% if hint %}<span class="settings-option-hint">{{ hint }}</span>{% endif %}
+  </div>
+  <div class="settings-option-full">
+    {{ caller() }}
+  </div>
+</li>
+{% endmacro %}

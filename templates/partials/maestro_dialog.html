@@ -1,32 +1,19 @@
-<div class="dialog-overlay hidden" id="maestro-dialog-overlay" data-dialog="maestro">
-  <div class="dialog dialog-wide" role="dialog" aria-labelledby="maestro-dialog-title">
-    <h2 id="maestro-dialog-title">Add maestro</h2>
-    <form id="maestro-dialog-form" method="post" enctype="multipart/form-data">
-      {% include "partials/csrf_field.html" %}
-      <input type="hidden" name="maestro_id" id="maestro-dialog-id" value="">
-      <div class="form-group">
-        <label for="maestro-display-name">Display name</label>
-        <input class="form-control" type="text" id="maestro-display-name" name="display_name" required>
-      </div>
-      <div class="form-group">
-        <label for="maestro-username">Username</label>
-        <input class="form-control" type="text" id="maestro-username" name="username" required autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label for="maestro-password">Password</label>
-        <input class="form-control" type="password" id="maestro-password" name="password" autocomplete="new-password">
-        <small class="field-hint" id="maestro-password-hint">Required for new maestros</small>
-      </div>
-      {% with appearance_field_prefix="maestro-", appearance_site_title="", appearance_show_site_title=true, appearance_logotype_preview=true, appearance_logotype=true, appearance_logotype_remove_hidden=true, appearance_logotype_remove_wrap_id="maestro-remove-logotype-wrap", appearance_theme_css="", appearance_theme_mode="admin", appearance_theme_text_hidden=true, appearance_theme_text_group_id="maestro-theme-text-group" %}
-        {% include "partials/maestro_appearance_fields.html" %}
-      {% endwith %}
-      <div class="dialog-actions">
-        <div class="dialog-actions-start">
-          <button type="button" class="btn btn-danger hidden" id="maestro-delete-btn">Delete</button>
-        </div>
-        <button type="button" class="btn" data-maestro-dialog-close>Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
-      </div>
-    </form>
-  </div>
+{% from "macros/settings_ui.html" import overlay_start, overlay_end, form_start, form_end, panel %}
+
+{{ overlay_start('maestro-dialog-overlay', 'maestro-dialog-title', 'Add maestro', 'data-maestro-dialog-close') }}
+{{ form_start('maestro-dialog-form', '', 'multipart/form-data') }}
+<input type="hidden" name="maestro_id" id="maestro-dialog-id" value="">
+{% call panel('Account') %}
+  {% with fp='maestro-', display_name='', username='', password_hint='Required for new maestros', password_required=true %}
+    {% include "partials/maestro_account_fields.html" %}
+  {% endwith %}
+{% endcall %}
+{% with appearance_field_prefix='maestro-', appearance_site_title='', appearance_show_site_title=true, appearance_logotype_preview=true, appearance_logotype=true, appearance_logotype_remove_hidden=true, appearance_logotype_remove_wrap_id='maestro-remove-logotype-wrap', appearance_theme_css='', appearance_theme_mode='admin', appearance_theme_text_hidden=true, appearance_theme_text_group_id='maestro-theme-text-group' %}
+  {% include "partials/maestro_appearance_fields.html" %}
+{% endwith %}
+{% call form_end('data-maestro-dialog-close') %}
+<div class="settings-dialog-footer-start">
+  <button type="button" class="btn btn-danger hidden" id="maestro-delete-btn">Delete</button>
 </div>
+{% endcall %}
+{{ overlay_end() }}

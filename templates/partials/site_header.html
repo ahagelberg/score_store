@@ -20,12 +20,9 @@
   <nav class="site-header-nav">
     {% if header_extra_nav %}{{ header_extra_nav }}{% endif %}
     {% if current_user and current_user.is_maestro() %}
-    <button type="button" class="btn-icon btn-icon-sm site-header-menu-btn" id="maestro-menu-btn" aria-label="Open menu" aria-haspopup="dialog" aria-controls="maestro-menu-overlay">
+    <button type="button" class="btn-icon btn-icon-sm site-header-menu-btn" id="maestro-settings-btn" aria-label="Settings" aria-haspopup="dialog" aria-controls="maestro-settings-overlay">
       {% include "partials/icon_gear.svg.html" %}
     </button>
     {% endif %}
   </nav>
 </header>
-{% if current_user and current_user.is_maestro() and maestro_settings %}
-{% include "partials/maestro_settings_shell.html" %}
-{% endif %}

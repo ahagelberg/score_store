@@ -15,6 +15,9 @@
 </head>
 <body>
   {% block body %}{% endblock %}
+  {% if current_user and current_user.is_maestro() and maestro_settings %}
+  {% include "partials/maestro_settings_shell.html" %}
+  {% endif %}
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
   <script src="{{ url_for('static', filename='js/csrf.js') }}"></script>
   <script src="{{ url_for('static', filename='js/system_info.js') }}"></script>
