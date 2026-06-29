@@ -10,7 +10,8 @@
         <a class="folder-tree-link{% if folder.id == 'root' %} active{% endif %}"
            data-folder-id="{{ folder.id }}"
            data-depth="{{ depth }}"
-           href="#">
+           href="#"
+           title="Open {{ folder.name }}">
           <span class="folder-tree-icon" aria-hidden="true">📁</span>
           <span class="folder-tree-name">{{ folder.name }}</span>
         </a>

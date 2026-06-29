@@ -741,16 +741,16 @@
       return `<div class="viewer-pdf-frame">
         <div class="viewer-pdf-mount" data-pdf-url="${file.serve_url}"></div>
         <div class="viewer-pdf-page-arrows hidden" aria-hidden="true">
-          <button type="button" class="viewer-pdf-page-arrow viewer-pdf-page-arrow-prev" aria-label="Previous page">
+          <button type="button" class="viewer-pdf-page-arrow viewer-pdf-page-arrow-prev" aria-label="Previous page" title="Previous page">
             <span class="viewer-pdf-page-arrow-symbol" aria-hidden="true">‹</span>
           </button>
-          <button type="button" class="viewer-pdf-page-arrow viewer-pdf-page-arrow-next" aria-label="Next page">
+          <button type="button" class="viewer-pdf-page-arrow viewer-pdf-page-arrow-next" aria-label="Next page" title="Next page">
             <span class="viewer-pdf-page-arrow-symbol" aria-hidden="true">›</span>
           </button>
-          <button type="button" class="viewer-pdf-page-arrow viewer-pdf-page-arrow-up" aria-label="Previous page">
+          <button type="button" class="viewer-pdf-page-arrow viewer-pdf-page-arrow-up" aria-label="Previous page" title="Previous page">
             <span class="viewer-pdf-page-arrow-symbol" aria-hidden="true">‹</span>
           </button>
-          <button type="button" class="viewer-pdf-page-arrow viewer-pdf-page-arrow-down" aria-label="Next page">
+          <button type="button" class="viewer-pdf-page-arrow viewer-pdf-page-arrow-down" aria-label="Next page" title="Next page">
             <span class="viewer-pdf-page-arrow-symbol" aria-hidden="true">‹</span>
           </button>
         </div>
@@ -769,10 +769,10 @@
       return `<iframe class="viewer-embed-frame" src="${file.embed_url}" allowfullscreen title="${file.display_name}"></iframe>`;
     }
     if (media === "musescore") {
-      return `<div class="viewer-download-hint"><p>${file.display_name} — MuseScore file</p><a class="btn btn-primary" href="${file.serve_url}" download>Download</a></div>`;
+      return `<div class="viewer-download-hint"><p>${file.display_name} — MuseScore file</p><a class="btn btn-primary" href="${file.serve_url}" download title="Download">Download</a></div>`;
     }
     if (file.serve_url) {
-      return `<div class="viewer-download-hint"><a class="btn btn-primary" href="${file.serve_url}" download>Download ${file.display_name}</a></div>`;
+      return `<div class="viewer-download-hint"><a class="btn btn-primary" href="${file.serve_url}" download title="Download ${escapeHtml(file.display_name)}">Download ${file.display_name}</a></div>`;
     }
     return `<div class="viewer-download-hint"><p>${file.display_name}</p></div>`;
   }
@@ -895,6 +895,7 @@
     fullscreenBtn.querySelector(".viewer-icon-fullscreen-enter").classList.toggle("hidden", inFs);
     fullscreenBtn.querySelector(".viewer-icon-fullscreen-exit").classList.toggle("hidden", !inFs);
     fullscreenBtn.setAttribute("aria-label", inFs ? "Exit fullscreen" : "Enter fullscreen");
+    fullscreenBtn.title = inFs ? "Exit fullscreen" : "Enter fullscreen";
   }
 
   function exitFullscreenIfNeeded() {

@@ -3,7 +3,7 @@
   <div class="settings-dialog" role="dialog" aria-labelledby="{{ labelledby }}">
     <div class="settings-dialog-header">
       <h2 class="settings-dialog-title" id="{{ labelledby }}">{{ title }}</h2>
-      <button type="button" class="btn-icon btn-icon-sm settings-dialog-close" {{ close_attr }} aria-label="Close">
+      <button type="button" class="btn-icon btn-icon-sm settings-dialog-close" {{ close_attr }} title="Close" aria-label="Close">
         {% include "partials/icon_close.svg.html" %}
       </button>
     </div>
@@ -24,8 +24,8 @@
   </div>
   <div class="settings-dialog-footer">
     {{ caller() }}
-    <button type="button" class="btn" {{ cancel_attr }}>Cancel</button>
-    <button type="submit" class="btn btn-primary">Save</button>
+    <button type="button" class="btn" {{ cancel_attr }} title="Cancel">Cancel</button>
+    <button type="submit" class="btn btn-primary" title="Save">Save</button>
   </div>
 </form>
 {% endmacro %}

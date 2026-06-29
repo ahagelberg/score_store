@@ -12,14 +12,14 @@
     {% include "partials/maestro_appearance_fields.html" %}
   {% endwith %}
   {% call panel('Account') %}
-    {% with password_field_prefix='maestro-', password_min_len=password_min_len, password_min_len_hint='At least ' ~ password_min_len ~ ' characters' %}
+    {% with password_field_prefix='maestro-settings-', autocomplete_section='maestro-settings', password_min_len=password_min_len, password_min_len_hint='At least ' ~ password_min_len ~ ' characters' %}
       {% include "partials/maestro_password_fields.html" %}
     {% endwith %}
   {% endcall %}
 </div>
 <div class="settings-dialog-footer">
-  <a class="settings-dialog-logout" href="{{ url_for('logout') }}">Log out</a>
-  <button type="button" class="btn" data-maestro-settings-close>Cancel</button>
-  <button type="button" class="btn btn-primary" id="maestro-settings-save">Save</button>
+  <a class="settings-dialog-logout" href="{{ url_for('logout') }}" title="Log out">Log out</a>
+  <button type="button" class="btn" data-maestro-settings-close title="Cancel">Cancel</button>
+  <button type="button" class="btn btn-primary" id="maestro-settings-save" title="Save">Save</button>
 </div>
 {{ overlay_end() }}

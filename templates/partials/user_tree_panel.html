@@ -1,20 +1,20 @@
 {% macro user_tree_user_row(node) %}
 <li class="user-tree-child{% if node.active %} active{% endif %}{% if node.role == 'choir' %} user-tree-choir{% elif node.role == 'singer' %} user-tree-singer{% endif %}{% if tree_ctx.drop_target_users %} drop-target{% endif %}"
     {% if tree_ctx.drop_target_users %}data-drop-kind="user" data-user-id="{{ node.id }}"{% endif %}>
-  <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, node, query, active_tag) }}">
+  <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, node, query, active_tag) }}" title="Open {{ node.display_name }}">
     {{ node.display_name }}
     {% if node.role %}<span class="user-tree-role">{{ node.role }}</span>{% endif %}
   </a>
   {% if tree_ctx.show_user_edit %}
   <button type="button" class="btn-icon btn-icon-sm user-handout-tree-btn"
           data-user-id="{{ node.id }}"
-          title="Login card" aria-label="Login card">⎙</button>
+          title="Show and print login card" aria-label="Login card">⎙</button>
   <button type="button" class="btn-icon btn-icon-sm user-edit-btn"
           data-user-id="{{ node.id }}"
           data-display-name="{{ node.display_name }}"
           data-username="{{ node.username }}"
           data-role="{{ node.role }}"
-          data-password="{{ node.password|default('', true)|e }}"
+          data-has-password="{{ '1' if node.password else '0' }}"
           title="Edit" aria-label="Edit">✎</button>
   {% endif %}
   {% if tree_ctx.show_user_preview %}
@@ -47,9 +47,9 @@
   <div class="desktop-panel-header">
     <span>{{ panel_title }}</span>
     {% if tree_ctx.show_maestro_actions %}
-    <button type="button" class="btn btn-sm btn-primary" id="add-maestro-btn">Add maestro</button>
+    <button type="button" class="btn btn-sm btn-primary" id="add-maestro-btn" title="Add maestro">Add maestro</button>
     {% elif tree_ctx.show_user_edit %}
-    <button type="button" class="btn btn-sm btn-primary" id="add-user-btn">Add user</button>
+    <button type="button" class="btn btn-sm btn-primary" id="add-user-btn" title="Add user">Add user</button>
     {% endif %}
   </div>
   <div class="desktop-panel-content">
@@ -59,7 +59,7 @@
       {% if node.kind == "maestro" %}
       <li class="user-tree-maestro">
         <div class="user-tree-row{% if node.active %} active{% endif %}">
-          <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, node, query, active_tag) }}">
+          <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, node, query, active_tag) }}" title="Open {{ node.display_name }}">
             <span class="user-tree-label">{{ node.display_name }}</span>
             <span class="user-tree-meta">({{ node.username }})</span>
           </a>
@@ -89,7 +89,7 @@
           {% for child in node.children if child.kind != 'user' %}
           <li class="user-tree-child{% if child.active %} active{% endif %}{% if tree_ctx.drop_target_users and child.kind == 'user' %} drop-target{% endif %}"
               {% if tree_ctx.drop_target_users and child.kind == 'user' %}data-drop-kind="user" data-user-id="{{ child.id }}"{% endif %}>
-            <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, child, query, active_tag) }}">
+            <a class="user-tree-link" href="{{ user_tree_node_url_global(tree_ctx.nav_endpoint, child, query, active_tag) }}" title="Open {{ child.display_name }}">
               {{ child.display_name }}
             </a>
           </li>

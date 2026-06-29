@@ -8,9 +8,9 @@
         {% include "partials/icon_close.svg.html" %}
       </button>
       <div class="viewer-score-nav hidden" id="score-viewer-nav" role="group" aria-label="Scores in library">
-        <button type="button" class="btn btn-sm viewer-score-nav-btn" id="score-viewer-prev" aria-label="Previous score">‹</button>
+        <button type="button" class="btn btn-sm viewer-score-nav-btn" id="score-viewer-prev" title="Previous score" aria-label="Previous score">‹</button>
         <span class="viewer-score-nav-pos" id="score-viewer-pos"></span>
-        <button type="button" class="btn btn-sm viewer-score-nav-btn" id="score-viewer-next" aria-label="Next score">›</button>
+        <button type="button" class="btn btn-sm viewer-score-nav-btn" id="score-viewer-next" title="Next score" aria-label="Next score">›</button>
       </div>
       <div class="viewer-heading">
         <span class="viewer-title" id="score-viewer-title"></span>
@@ -38,7 +38,7 @@
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
         </svg>
       </button>
-      <button type="button" class="btn-icon btn-icon-sm viewer-header-btn" id="score-viewer-fullscreen" aria-label="Enter fullscreen">
+      <button type="button" class="btn-icon btn-icon-sm viewer-header-btn" id="score-viewer-fullscreen" title="Enter fullscreen" aria-label="Enter fullscreen">
         <svg class="viewer-icon-fullscreen-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9"/>
           <path d="M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15"/>

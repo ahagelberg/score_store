@@ -266,7 +266,7 @@
     const extHtml = ext ? `<span class="filename-field-ext">.${escapeHtml(ext)}</span>` : "";
     const display = youtubeUrl ? escapeHtml(name) : escapeHtml(fileDisplayName(name, ext));
     const displayEl = youtubeUrl
-      ? `<a class="aux-file-name aux-file-link filename-field-value" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener noreferrer" data-filename-display data-file-id="${escapeHtml(fileId)}">${display}</a>`
+      ? `<a class="aux-file-name aux-file-link filename-field-value" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener noreferrer" data-filename-display data-file-id="${escapeHtml(fileId)}" title="Open ${display}">${display}</a>`
       : `<span class="aux-file-name filename-field-value" data-filename-display data-file-id="${escapeHtml(fileId)}">${display}</span>`;
     return `<div class="aux-file-name-field filename-field" data-filename-field data-file-id="${escapeHtml(fileId)}" data-filename-stem="${escapeHtml(name)}"${extAttr}>
       ${displayEl}
@@ -422,7 +422,7 @@
             <div class="score-section" data-section="aux">
               <div class="score-section-header" data-section-toggle><span>Additional files</span><span>−</span></div>
               <div class="score-section-body">
-                <button type="button" class="btn btn-sm add-youtube-btn">+ YouTube</button>
+                <button type="button" class="btn btn-sm add-youtube-btn" title="Add YouTube link">+ YouTube</button>
                 <div class="aux-files">
                   <ul class="aux-file-list" data-aux-list>${auxFiles.map(buildAuxFileHtml).join("")}</ul>
                   <div class="aux-drop-zone drop-target aux-drop-zone-active" data-drop-kind="aux" data-score-id="${escapeHtml(score.id)}">
@@ -432,8 +432,8 @@
               </div>
             </div>
             <div class="score-editor-actions">
-              <button type="button" class="btn score-cancel-btn">Cancel</button>
-              <button type="button" class="btn btn-primary score-save-btn">Save</button>
+              <button type="button" class="btn score-cancel-btn" title="Cancel">Cancel</button>
+              <button type="button" class="btn btn-primary score-save-btn" title="Save">Save</button>
             </div>
       </div>`;
     return li;

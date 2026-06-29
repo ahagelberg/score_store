@@ -845,6 +845,7 @@
       btn.classList.add("viewer-notes-symbol-btn-dynamic");
     }
     btn.dataset.symbolId = symbol;
+    btn.title = symbol;
     btn.textContent = symbol;
     btn.addEventListener("click", () => {
       activeSymbolId = symbol;
@@ -880,6 +881,7 @@
       btn.className = "viewer-notes-tool";
       btn.dataset.tool = tool;
       btn.textContent = TOOL_LABELS[tool];
+      btn.title = TOOL_LABELS[tool];
       btn.addEventListener("click", () => {
         activeTool = tool;
         applyToolDefaultColor(tool);

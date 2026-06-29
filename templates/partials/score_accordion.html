@@ -110,7 +110,7 @@
       </div>
       <div class="score-section-body">
         {% if can_edit|default(false) %}
-        <button type="button" class="btn btn-sm add-youtube-btn">+ YouTube</button>
+        <button type="button" class="btn btn-sm add-youtube-btn" title="Add YouTube link">+ YouTube</button>
         {% endif %}
         <div class="aux-files">
           <ul class="aux-file-list" data-aux-list>
@@ -143,8 +143,8 @@
     </div>
     {% if can_edit|default(false) %}
     <div class="score-editor-actions">
-      <button type="button" class="btn score-cancel-btn">Cancel</button>
-      <button type="button" class="btn btn-primary score-save-btn">Save</button>
+      <button type="button" class="btn score-cancel-btn" title="Cancel">Cancel</button>
+      <button type="button" class="btn btn-primary score-save-btn" title="Save">Save</button>
     </div>
     {% endif %}
   </div>

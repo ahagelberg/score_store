@@ -22,7 +22,7 @@
     </div>
     <div class="user-handout-row">
       <dt>Login</dt>
-      <dd><a class="user-handout-url" href="{{ login_url }}">{{ login_url }}</a></dd>
+      <dd><a class="user-handout-url" href="{{ login_url }}" title="Open login page">{{ login_url }}</a></dd>
     </div>
   </dl>
   {% if not password_available %}
@@ -31,7 +31,7 @@
   <section class="user-handout-steps">
     <h3 class="user-handout-steps-title">How to sign in</h3>
     <ol class="user-handout-steps-list">
-      <li>Open <a href="{{ login_url }}">{{ login_url }}</a> in your web browser.</li>
+      <li>Open <a href="{{ login_url }}" title="Open login page">{{ login_url }}</a> in your web browser.</li>
       <li>Enter username <strong>{{ username }}</strong> and your password.</li>
       <li>Open your assigned scores from your library.</li>
     </ol>

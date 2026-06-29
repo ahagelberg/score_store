@@ -6,7 +6,7 @@
   const AJAX_HEADER = "X-Requested-With";
   const AJAX_VALUE = "XMLHttpRequest";
   const MAESTRO_ROOT_ID = "maestro-root";
-  let editUserPassword = "";
+  let editUserHasPassword = false;
   let handoutUserId = "";
 
   function maestroRoot() {
@@ -34,24 +34,46 @@
     input.value = token;
   }
 
+  function userDialogAutocompleteSection(mode, username) {
+    if (mode === "edit" && username) return `section-user-edit-${username}`;
+    return "section-user-new";
+  }
+
+  function setUserDialogAutocomplete(mode, username) {
+    const usernameField = document.getElementById("user-username");
+    const pw = document.getElementById("user-password");
+    if (!usernameField || !pw) return;
+    const section = userDialogAutocompleteSection(mode, username);
+    usernameField.autocomplete = `${section} username`;
+    pw.autocomplete = `${section} new-password`;
+  }
+
+  function clearUserDialogAutocomplete() {
+    const usernameField = document.getElementById("user-username");
+    const pw = document.getElementById("user-password");
+    if (usernameField) usernameField.autocomplete = "off";
+    if (pw) {
+      pw.autocomplete = "off";
+      pw.value = "";
+    }
+  }
+
   function configurePasswordField(mode, user, pw, hint, roleEl) {
     const role = roleEl ? roleEl.value : (user?.role || "");
     const isMaestro = role === MAESTRO_ROLE;
+    pw.value = "";
     if (mode === "edit" && user) {
       pw.required = false;
       if (isMaestro) {
-        pw.value = "";
         hint.textContent = "Encrypted passwords are not stored for viewing";
       } else {
-        pw.value = user.password || "";
-        hint.textContent = user.password
+        hint.textContent = user.hasPassword
           ? "Leave blank to keep current password"
           : "Not on file — enter to set and store";
       }
       return;
     }
     pw.required = true;
-    pw.value = "";
     hint.textContent = "Required for new users";
   }
 
@@ -85,15 +107,17 @@
       document.getElementById("user-display-name").value = user.displayName;
       document.getElementById("user-username").value = user.username;
       if (roleEl) roleEl.value = user.role;
-      editUserPassword = user.password || "";
+      editUserHasPassword = user.hasPassword;
       if (deleteBtn) deleteBtn.classList.remove("hidden");
+      setUserDialogAutocomplete("edit", user.username);
     } else {
       title.textContent = "Add user";
       form.reset();
       form.action = scopedUrl("/maestro/users/new");
       ensurePreviewField(form);
-      editUserPassword = "";
+      editUserHasPassword = false;
       if (deleteBtn) deleteBtn.classList.add("hidden");
+      setUserDialogAutocomplete("new");
     }
     configurePasswordField(mode, user, pw, hint, roleEl);
     updateHandoutButton(mode, roleEl);
@@ -103,6 +127,7 @@
   function closeDialog() {
     const overlay = document.getElementById("user-dialog-overlay");
     if (overlay) overlay.classList.add("hidden");
+    clearUserDialogAutocomplete();
   }
 
   function closeHandoutDialog() {
@@ -234,7 +259,7 @@
           displayName: editBtn.dataset.displayName,
           username: editBtn.dataset.username,
           role: editBtn.dataset.role,
-          password: editBtn.dataset.password || "",
+          hasPassword: editBtn.dataset.hasPassword === "1",
         });
         return;
       }
@@ -256,8 +281,13 @@
     if (roleEl && pw && hint) {
       roleEl.addEventListener("change", () => {
         const mode = document.getElementById("user-dialog-user-id")?.value ? "edit" : "new";
-        const user = mode === "edit" ? { role: roleEl.value, password: editUserPassword } : null;
+        const username = document.getElementById("user-username")?.value || "";
+        const user = mode === "edit"
+          ? { role: roleEl.value, hasPassword: editUserHasPassword }
+          : null;
         configurePasswordField(mode, user, pw, hint, roleEl);
+        if (mode === "edit") setUserDialogAutocomplete("edit", username);
+        else setUserDialogAutocomplete("new");
         updateHandoutButton(mode, roleEl);
       });
     }

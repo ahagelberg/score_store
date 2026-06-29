@@ -79,10 +79,7 @@
   --score-list-row-padding-block: 5px;
   --score-list-row-padding-inline: 8px;
   --score-list-row-min-height: 28px;
-  --folder-parent-arrow-size: 12px;
-  --folder-parent-arrow-stroke: 2px;
-  --folder-parent-arrow-arm-ratio: 0.65;
-  --folder-parent-arrow-shift: 1px;
+  --folder-parent-arrow-size: 14px;
 }
 
 body {
@@ -1203,21 +1200,15 @@ textarea.form-control {
 
 .folder-parent-icon {
   display: inline-flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  width: var(--folder-parent-arrow-size);
-  height: var(--folder-parent-arrow-size);
   flex-shrink: 0;
 }
 
-.folder-parent-icon::before {
-  content: "";
-  display: block;
-  width: calc(var(--folder-parent-arrow-size) * var(--folder-parent-arrow-arm-ratio));
-  height: calc(var(--folder-parent-arrow-size) * var(--folder-parent-arrow-arm-ratio));
-  border-left: var(--folder-parent-arrow-stroke) solid currentColor;
-  border-top: var(--folder-parent-arrow-stroke) solid currentColor;
-  transform: translateX(var(--folder-parent-arrow-shift));
+.folder-list-link .icon-folder-up {
+  width: var(--folder-parent-arrow-size);
+  height: var(--folder-parent-arrow-size);
+  flex-shrink: 0;
 }
 
 .score-touch-drag-ghost {

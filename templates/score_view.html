@@ -10,7 +10,7 @@
      data-enable-download="{{ 'true' if maestro_library_features.enable_download else 'false' }}">
   <header class="site-header score-view-header">
     <nav class="score-view-header-nav">
-      <a class="header-link score-view-back" href="{{ back_url }}">← Back to library</a>
+      <a class="header-link score-view-back" href="{{ back_url }}" title="Back to library">← Back to library</a>
     </nav>
     <h1 class="score-view-heading">{{ score.title }}</h1>
     {% set subtitle = score_subtitle_line(score) %}
@@ -21,7 +21,7 @@
       {% if main_file_url %}
       {% if maestro_library_features.enable_download %}
       <p class="score-view-fallback-actions">
-        <a class="btn btn-primary" href="{{ download_url }}">Download PDF</a>
+        <a class="btn btn-primary" href="{{ download_url }}" title="Download PDF">Download PDF</a>
       </p>
       {% endif %}
       <embed class="score-view-pdf-fallback" src="{{ main_file_url }}" type="application/pdf" title="{{ score.title }}">

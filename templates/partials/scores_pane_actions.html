@@ -1,9 +1,9 @@
 <div class="scores-pane-actions">
   <div class="view-toggle" role="group" aria-label="Library view">
-    <button type="button" class="view-toggle-btn active" data-view-mode="list">List</button>
-    <button type="button" class="view-toggle-btn" data-view-mode="folder">Folders</button>
+    <button type="button" class="view-toggle-btn active" data-view-mode="list" title="List view">List</button>
+    <button type="button" class="view-toggle-btn" data-view-mode="folder" title="Folder view">Folders</button>
   </div>
   {% if library_panel.can_manage_folders %}
-  <button type="button" class="btn btn-sm new-folder-btn" data-library-ctx="{{ library_panel.library_ctx }}">New folder</button>
+  <button type="button" class="btn btn-sm new-folder-btn" data-library-ctx="{{ library_panel.library_ctx }}" title="New folder">New folder</button>
   {% endif %}
 </div>

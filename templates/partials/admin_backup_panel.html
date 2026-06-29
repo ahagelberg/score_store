@@ -5,6 +5,7 @@
     <button type="button" class="btn btn-sm btn-primary" id="admin-maestro-backup-btn"
             data-maestro-id="{{ selected_maestro }}"
             data-backup-enabled="{{ '1' if backup_enabled else '0' }}"
+            title="Create backup"
             {% if not backup_enabled %}disabled{% endif %}>Create backup</button>
   </div>
   <form class="maestro-backup-config-form" id="admin-backup-config-form" method="post"
@@ -18,13 +19,13 @@
     <input class="form-control maestro-backup-config-input" type="number" id="admin-backup-retention"
            name="backup_retention_count" value="{{ backup_retention }}"
            min="{{ constants.BACKUP_RETENTION_MIN }}" max="{{ constants.BACKUP_RETENTION_MAX }}" required>
-    <button type="submit" class="btn btn-sm">Save</button>
+    <button type="submit" class="btn btn-sm" title="Save backup settings">Save</button>
   </form>
   {% if maestro_backups %}
   <ul class="maestro-backup-list" id="admin-maestro-backup-list">
     {% for backup in maestro_backups %}
     <li class="maestro-backup-item">
-      <a class="maestro-backup-link" href="{{ url_for('admin_maestro_backup_download', maestro_username=selected_maestro, filename=backup.filename) }}">{{ backup.filename }}</a>
+      <a class="maestro-backup-link" href="{{ url_for('admin_maestro_backup_download', maestro_username=selected_maestro, filename=backup.filename) }}" title="Download {{ backup.filename }}">{{ backup.filename }}</a>
       <div class="maestro-backup-actions">
         <span class="maestro-backup-meta">{{ backup.size_label }}</span>
         <button type="button" class="btn-icon btn-icon-sm maestro-backup-delete-btn"

@@ -1,7 +1,7 @@
 {% if preview_mode %}
 <div class="preview-banner">
   <span>Admin preview: {{ preview_user.display_name }} ({{ preview_user.role }})</span>
-  <a class="preview-banner-link" href="{{ url_for('admin') }}">Exit preview</a>
+  <a class="preview-banner-link" href="{{ url_for('admin') }}" title="Exit preview">Exit preview</a>
 </div>
 {% endif %}
 <header class="site-header">
@@ -20,7 +20,7 @@
   <nav class="site-header-nav">
     {% if header_extra_nav %}{{ header_extra_nav }}{% endif %}
     {% if current_user and current_user.is_maestro() %}
-    <button type="button" class="btn-icon btn-icon-sm site-header-menu-btn" id="maestro-settings-btn" aria-label="Settings" aria-haspopup="dialog" aria-controls="maestro-settings-overlay">
+    <button type="button" class="btn-icon btn-icon-sm site-header-menu-btn" id="maestro-settings-btn" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-controls="maestro-settings-overlay">
       {% include "partials/icon_gear.svg.html" %}
     </button>
     {% endif %}

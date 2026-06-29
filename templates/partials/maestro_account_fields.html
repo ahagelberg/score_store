@@ -2,5 +2,5 @@
 {{ options_open() }}
 {{ option_field('display_name', fp ~ 'display-name', 'Display name', display_name, required=true) }}
 {{ option_field('username', fp ~ 'username', 'Username', username, required=true, autocomplete='off') }}
-{{ option_field('password', fp ~ 'password', 'Password', '', password_hint, required=password_required, input_type='password', autocomplete='new-password') }}
+{{ option_field('password', fp ~ 'password', 'Password', '', password_hint, required=password_required, input_type='password', autocomplete='off') }}
 {{ options_close() }}

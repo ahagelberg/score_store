@@ -4,9 +4,31 @@
   const AJAX_HEADER = "X-Requested-With";
   const AJAX_VALUE = "XMLHttpRequest";
 
+  function setMaestroDialogAutocomplete(mode, username) {
+    const usernameField = document.getElementById("maestro-username");
+    const pw = document.getElementById("maestro-password");
+    if (!usernameField || !pw) return;
+    const section = mode === "edit" && username
+      ? `section-maestro-edit-${username}`
+      : "section-maestro-new";
+    usernameField.autocomplete = `${section} username`;
+    pw.autocomplete = `${section} new-password`;
+  }
+
+  function clearMaestroDialogAutocomplete() {
+    const usernameField = document.getElementById("maestro-username");
+    const pw = document.getElementById("maestro-password");
+    if (usernameField) usernameField.autocomplete = "off";
+    if (pw) {
+      pw.autocomplete = "off";
+      pw.value = "";
+    }
+  }
+
   function closeMaestroDialog() {
     const overlay = document.getElementById("maestro-dialog-overlay");
     if (overlay) overlay.classList.add("hidden");
+    clearMaestroDialogAutocomplete();
   }
 
   function setMaestroLogotypePreview(logotypeUrl) {
@@ -60,6 +82,7 @@
       if (themeTextGroup) themeTextGroup.classList.remove("hidden");
       if (logotypeInput) logotypeInput.value = "";
       setMaestroLogotypePreview(maestro.logotypeUrl || "");
+      setMaestroDialogAutocomplete("edit", maestro.username);
     } else {
       title.textContent = "Add maestro";
       form.action = "/admin/maestros";
@@ -73,6 +96,7 @@
       if (themeTextGroup) themeTextGroup.classList.add("hidden");
       if (logotypeInput) logotypeInput.value = "";
       setMaestroLogotypePreview("");
+      setMaestroDialogAutocomplete("new");
     }
     overlay.classList.remove("hidden");
   }

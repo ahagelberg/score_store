@@ -36,6 +36,7 @@
     btn.type = "button";
     btn.className = "tag-chip-remove";
     btn.dataset.tagRemove = "";
+    btn.setAttribute("aria-label", "Remove tag");
     btn.textContent = "×";
     chip.appendChild(btn);
     list.appendChild(chip);

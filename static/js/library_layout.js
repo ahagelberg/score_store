@@ -15,6 +15,18 @@
   const FOLDER_TREE_ROOT_DEPTH = 0;
   const NARROW_SCREEN_MAX_WIDTH_PX = 1023;
   const COMPACT_NAV_MEDIA = `(max-width: ${NARROW_SCREEN_MAX_WIDTH_PX}px)`;
+  const FOLDER_PARENT_ICON_TEMPLATE_ID = "folder-parent-icon-template";
+
+  function createFolderParentIcon() {
+    const tpl = document.getElementById(FOLDER_PARENT_ICON_TEMPLATE_ID);
+    if (tpl?.content?.firstElementChild) {
+      return tpl.content.firstElementChild.cloneNode(true);
+    }
+    const icon = document.createElement("span");
+    icon.className = "folder-list-icon folder-parent-icon";
+    icon.setAttribute("aria-hidden", "true");
+    return icon;
+  }
 
   function isCompactFolderNav() {
     return window.matchMedia(COMPACT_NAV_MEDIA).matches;
@@ -157,6 +169,7 @@
     const name = document.createElement("span");
     name.className = "folder-tree-name";
     name.textContent = folder.name || folder.id;
+    link.title = `Open ${folder.name || folder.id}`;
     link.append(icon, name);
     row.appendChild(link);
     if (manageFolders && folder.id !== ROOT_FOLDER_ID) {
@@ -347,12 +360,11 @@
     btn.type = "button";
     btn.className = "folder-list-link folder-parent-link";
     btn.dataset.folderId = parentId;
-    const icon = document.createElement("span");
-    icon.className = "folder-list-icon folder-parent-icon";
-    icon.setAttribute("aria-hidden", "true");
+    const icon = createFolderParentIcon();
     const name = document.createElement("span");
     name.className = "folder-list-name";
     name.textContent = label;
+    btn.title = `Open ${label}`;
     btn.append(icon, name);
     btn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -380,6 +392,8 @@
     const name = document.createElement("span");
     name.className = "folder-list-name";
     name.textContent = folder.name || folder.id;
+    const folderLabel = folder.name || folder.id;
+    btn.title = `Open ${folderLabel}`;
     btn.append(icon, name);
     btn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -498,6 +512,7 @@
     resetBtn.type = "button";
     resetBtn.className = "btn btn-sm";
     resetBtn.textContent = "Reset layout";
+    resetBtn.title = "Reset layout";
     resetBtn.addEventListener("click", () => {
       localStorage.removeItem(STORAGE_KEY);
       location.reload();

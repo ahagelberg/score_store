@@ -16,7 +16,8 @@
           <button type="button"
                   class="tag-filter-chip{% if library_panel.active_tag == t %} active{% endif %}"
                   data-tag-filter
-                  data-tag="{{ t }}">{{ t }}</button>
+                  data-tag="{{ t }}"
+                  title="Filter by {{ t }}">{{ t }}</button>
         {% endfor %}
       </div>
     </div>
@@ -43,3 +44,4 @@
     </div>
   </div>
 </div>
+<template id="folder-parent-icon-template">{% include "partials/icon_folder_up.svg.html" %}</template>
