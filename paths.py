@@ -83,6 +83,10 @@ def maestro_backups_dir(maestro_username: str) -> Path:
     return backups_root() / uname
 
 
+def backup_scheduler_lock_path() -> Path:
+    return c.INSTANCE_DIR / c.BACKUP_SCHEDULER_LOCK_FILENAME
+
+
 def resolve_data_dir(path_str: str) -> Path:
     raw = path_str.strip()
     if not raw:

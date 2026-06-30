@@ -61,6 +61,15 @@
   width: 4.5rem;
 }
 
+.maestro-backup-config-select {
+  width: 7rem;
+}
+
+.maestro-backup-schedule-note {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
 .maestro-backup-list {
   list-style: none;
   margin: 0;

@@ -36,6 +36,7 @@ from models.user import User
 import user_handout
 from services import maestro_settings as maestro_settings_service
 from services import maestro_backup as maestro_backup_service
+from services import backup_scheduler as backup_scheduler_service
 import paths
 
 APP_TITLE = constants.APP_NAME
@@ -75,6 +76,11 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
 if os.environ.get("USE_HTTPS") == "1":
     app.config["SESSION_COOKIE_SECURE"] = True
+
+
+@app.before_request
+def _ensure_backup_scheduler():
+    backup_scheduler_service.ensure_started()
 
 
 def _ctx_serializer() -> URLSafeSerializer:
@@ -1050,6 +1056,9 @@ def inject_globals():
         "preview_user": preview_user,
         "notes_storage": notes_storage_for_user(user),
         "constants": constants,
+        "backup_schedule_time": (
+            f"{constants.BACKUP_SCHEDULE_HOUR:02d}:{constants.BACKUP_SCHEDULE_MINUTE:02d}"
+        ),
     }
 
 
@@ -1424,12 +1433,14 @@ def admin_maestro_backup_context(actor: User, selected_maestro: str | None) -> d
         return {
             "backup_enabled": False,
             "backup_retention": constants.DEFAULT_BACKUP_RETENTION_COUNT,
+            "backup_schedule": constants.DEFAULT_BACKUP_SCHEDULE,
             "maestro_backups": [],
         }
     settings = maestro_backup_service.backup_settings(selected_maestro)
     return {
         "backup_enabled": settings["enabled"],
         "backup_retention": settings["retention"],
+        "backup_schedule": settings["schedule"],
         "maestro_backups": maestro_backup_service.list_maestro_backups(selected_maestro),
     }
 
@@ -1454,6 +1465,7 @@ def admin_maestro_backup_config(maestro_id):
             "message": "Backup settings saved",
             "backup_enabled": settings["enabled"],
             "backup_retention": settings["retention"],
+            "backup_schedule": settings["schedule"],
         })
     flash("Backup settings saved", "success")
     return redirect(url_for("admin", maestro=target.username))
@@ -1482,6 +1494,7 @@ def admin_maestro_backup(maestro_id):
             "backups": maestro_backup_service.list_maestro_backups(target.username),
             "backup_enabled": settings["enabled"],
             "backup_retention": settings["retention"],
+            "backup_schedule": settings["schedule"],
         })
     flash(f"Backup created ({result['filename']})", "success")
     return redirect(url_for("admin", maestro=target.username))

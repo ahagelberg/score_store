@@ -15,6 +15,13 @@
       <input type="checkbox" name="backup_enabled" id="admin-backup-enabled" value="1"{% if backup_enabled %} checked{% endif %}>
       Enable backups
     </label>
+    <label class="maestro-backup-config-label" for="admin-backup-schedule">Schedule</label>
+    <select class="form-control maestro-backup-config-select" id="admin-backup-schedule" name="backup_schedule" required>
+      <option value="{{ constants.BACKUP_SCHEDULE_DAILY }}"{% if backup_schedule == constants.BACKUP_SCHEDULE_DAILY %} selected{% endif %}>Daily</option>
+      <option value="{{ constants.BACKUP_SCHEDULE_WEEKLY }}"{% if backup_schedule == constants.BACKUP_SCHEDULE_WEEKLY %} selected{% endif %}>Weekly</option>
+      <option value="{{ constants.BACKUP_SCHEDULE_MONTHLY }}"{% if backup_schedule == constants.BACKUP_SCHEDULE_MONTHLY %} selected{% endif %}>Monthly</option>
+    </select>
+    <span class="maestro-backup-schedule-note">Automatic backups run at {{ backup_schedule_time }}</span>
     <label class="maestro-backup-config-label" for="admin-backup-retention">Backups to keep</label>
     <input class="form-control maestro-backup-config-input" type="number" id="admin-backup-retention"
            name="backup_retention_count" value="{{ backup_retention }}"

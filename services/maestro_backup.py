@@ -2,7 +2,7 @@
 
 import json
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import constants as c
@@ -12,14 +12,15 @@ from models.maestro_config import MaestroConfig
 
 FORM_BACKUP_ENABLED = c.MAESTRO_KEY_BACKUP_ENABLED
 FORM_BACKUP_RETENTION = c.MAESTRO_KEY_BACKUP_RETENTION
+FORM_BACKUP_SCHEDULE = c.MAESTRO_KEY_BACKUP_SCHEDULE
 
 
-def backup_settings(maestro_username: str) -> dict[str, bool | int]:
+def backup_settings(maestro_username: str) -> dict[str, bool | int | str]:
     cfg = MaestroConfig.from_dict(store.load_maestro_config(maestro_username))
     return cfg.backup_settings()
 
 
-def apply_backup_config(maestro_username: str, form) -> dict[str, bool | int]:
+def apply_backup_config(maestro_username: str, form) -> dict[str, bool | int | str]:
     cfg = store.load_maestro_config(maestro_username)
     mc = MaestroConfig.from_dict(cfg)
     mc.backup_enabled = store.form_show_site_title_checked(form.get(FORM_BACKUP_ENABLED))
@@ -28,9 +29,20 @@ def apply_backup_config(maestro_username: str, form) -> dict[str, bool | int]:
         count = int(raw)
     except (TypeError, ValueError):
         raise ValueError("Invalid number of backups to keep")
+    schedule = form.get(FORM_BACKUP_SCHEDULE, "").strip().lower()
+    if schedule not in c.BACKUP_SCHEDULE_VALUES:
+        raise ValueError("Invalid backup schedule")
     mc.backup_retention_count = MaestroConfig._clamp_backup_retention(count)
+    mc.backup_schedule = schedule
     store.save_maestro_config(maestro_username, mc.to_dict())
     return mc.backup_settings()
+
+
+def mark_scheduled_backup_done(maestro_username: str, run_date: date) -> None:
+    cfg = store.load_maestro_config(maestro_username)
+    mc = MaestroConfig.from_dict(cfg)
+    mc.backup_last_scheduled = run_date.isoformat()
+    store.save_maestro_config(maestro_username, mc.to_dict())
 
 
 def _backup_filename(maestro_username: str, when: datetime) -> str:
@@ -86,6 +98,48 @@ def create_maestro_backup(maestro_username: str) -> dict:
     settings = backup_settings(uname)
     if not settings["enabled"]:
         raise ValueError("Backups are disabled for this account")
+    return _create_maestro_backup(uname, count_as_scheduled=True)
+
+
+def run_scheduled_maestro_backup(maestro_username: str, run_date: date) -> dict | None:
+    uname = maestro_username.strip().lower()
+    mc = MaestroConfig.from_dict(store.load_maestro_config(uname))
+    if not mc.scheduled_backup_due(run_date):
+        return None
+    result = _create_maestro_backup(uname, count_as_scheduled=True)
+    result["scheduled"] = True
+    return result
+
+
+def run_due_scheduled_backups(run_at: datetime | None = None) -> list[dict]:
+    when = (run_at or datetime.now().astimezone()).astimezone()
+    if not past_schedule_time(when):
+        return []
+    run_date = when.date()
+    results: list[dict] = []
+    for maestro in store.get_maestro_accounts():
+        try:
+            result = run_scheduled_maestro_backup(maestro.username, run_date)
+        except (ValueError, OSError):
+            continue
+        if result:
+            results.append(result)
+    return results
+
+
+def past_schedule_time(when: datetime) -> bool:
+    local = when.astimezone()
+    target = local.replace(
+        hour=c.BACKUP_SCHEDULE_HOUR,
+        minute=c.BACKUP_SCHEDULE_MINUTE,
+        second=0,
+        microsecond=0,
+    )
+    return local >= target
+
+
+def _create_maestro_backup(maestro_username: str, *, count_as_scheduled: bool = False) -> dict:
+    uname = maestro_username.strip().lower()
     source = paths.maestro_data_dir(uname)
     if not source.is_dir():
         raise ValueError("Maestro data folder not found")
@@ -94,8 +148,11 @@ def create_maestro_backup(maestro_username: str) -> dict:
     dest = paths.maestro_backups_dir(uname) / filename
     account_users = _account_user_records(uname)
     _write_maestro_zip(source, dest, account_users)
+    settings = backup_settings(uname)
     keep = int(settings["retention"])
     removed = prune_maestro_backups(uname, keep)
+    if count_as_scheduled:
+        mark_scheduled_backup_done(uname, when.astimezone().date())
     size_bytes = dest.stat().st_size
     return {
         "filename": filename,
